@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+
+name="bollard"
+description="Bollard node (HTTP :8080, behind nginx as bollard.exchange)"
+
+supervisor="supervise-daemon"
+command="/usr/local/bin/bollard"
+command_args="run"
+command_user="bollard:bollard"
+directory="/var/lib/bollard"
+output_log="/var/log/bollard.log"
+error_log="/var/log/bollard.log"
+pidfile="/var/run/bollard.pid"
+
+respawn_delay=5
+respawn_max=0
+
+start_pre() {
+    checkpath -f -o bollard:bollard "$output_log"
+    # One line per variable, KEY=value, no quotes needed. See deploy/env.example.
+    set -a
+    . /etc/bollard/env
+    set +a
+}
+
+depend() {
+    need net postgresql
+}

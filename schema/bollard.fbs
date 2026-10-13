@@ -1,0 +1,63 @@
+// Bollard wire format. The bytes the leader (or a user) signed are canonical:
+// they are hashed, signed, stored and relayed as-is, never re-encoded.
+namespace bollard.fb;
+
+// ---------------------------------------------------------------- user transactions
+
+// Move BLRD between accounts.
+table Transfer { to: [ubyte]; amount: uint64; }
+
+// Rest an order. Amounts are in each asset's atoms; price is quote atoms per
+// 1e8 base atoms; bond is the total BLRD (in rill) locked for the whole order.
+table PlaceOrder {
+  market: string;          // "base/quote", e.g. "btc:BTC/eth:ETH"
+  side: ubyte;             // 0 = buy base (maker pays quote), 1 = sell base (maker pays base)
+  quantity: uint64;        // base atoms
+  price: uint64;           // quote atoms per 1e8 base atoms
+  bond: uint64;            // rill locked from the maker for this order
+  claim_bond: uint64;      // rill a claimant must lock to claim; 0 = none
+  fill_policy: ubyte;      // 0 = seen, 1 = included, 2 = final
+  receive_address: string; // maker's address on the chain of the asset it is buying
+  expiry_height: uint32;   // Bitcoin height at which the order cancels itself
+}
+
+table CancelOrder { order_id: [ubyte]; }
+
+// Claim part of a resting order. The match id is the hash of this entry.
+table Claim { order_id: [ubyte]; quantity: uint64; receive_address: string; }
+
+// Report the txid that pays a leg. Anyone may report the maker's leg.
+table ReportPayment { match_id: [ubyte]; leg: ubyte; txid: string; } // leg: 0 = taker, 1 = maker
+
+union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment }
+
+table Tx { account: [ubyte]; nonce: uint64; body: TxBody; }
+
+// tx = the Tx bytes exactly as signed; sig = 64-byte compact ECDSA over SHA256(tx).
+table SignedTx { tx: [ubyte] (nested_flatbuffer: "Tx"); sig: [ubyte]; }
+
+// ---------------------------------------------------------------- leader assertions
+
+table EpochStart  { height: uint32; entry_txid: string; }
+table ClaimExpired { match_id: [ubyte]; }
+table LegIncluded { match_id: [ubyte]; leg: ubyte; txid: string; block_hash: string; block_height: uint64; }
+table ClaimVoid   { match_id: [ubyte]; reason: ubyte; }   // 1 = taker deadline, 2 = taker payment reorged out
+table LegMissed   { match_id: [ubyte]; leg: ubyte; }
+table MatchClosed { match_id: [ubyte]; }
+table Handoff     { reason: string; replaced: [ubyte]; }
+
+union EntryBody { SignedTx, EpochStart, ClaimExpired, LegIncluded, ClaimVoid, LegMissed, MatchClosed, Handoff }
+
+table EntryContent {
+  seq: uint64;
+  prev: [ubyte];     // hash of the previous entry; 32 zero bytes for seq 1
+  height: uint32;    // Bitcoin height of the leader's epoch
+  time: uint64;      // leader's clock, ms since the epoch; never decreases
+  body: EntryBody;
+  leader: [ubyte];   // 33-byte compressed secp256k1 key
+}
+
+// content = the EntryContent bytes exactly as signed; hash = SHA256(content).
+table Entry { content: [ubyte] (nested_flatbuffer: "EntryContent"); sig: [ubyte]; }
+
+root_type Entry;

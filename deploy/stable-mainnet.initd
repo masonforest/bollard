@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# bitcoin.dance behind nginx: plain HTTP on :3000, no ACME (nginx holds the certs now).
+
+name="stable-mainnet"
+description="bitcoin.dance passkey wallet (HTTP :3000, behind nginx)"
+
+supervisor="supervise-daemon"
+command="/usr/local/bin/bun"
+command_args="server/index.js"
+directory="/var/www/mainnet.bitcoin.dance"
+output_log="/var/log/stable-mainnet.log"
+error_log="/var/log/stable-mainnet.log"
+pidfile="/var/run/stable-mainnet.pid"
+
+respawn_delay=5
+respawn_max=0
+
+start_pre() {
+    export PORT=3000
+    export DOMAINS=""
+}
+
+depend() {
+    need net
+}
