@@ -79,7 +79,7 @@ pub enum TxCmd {
     },
     /// Report the txid that pays a leg (taker or maker)
     Report {
-        #[arg(long, name = "match")]
+        #[arg(long = "match")]
         match_id: String,
         /// taker or maker
         #[arg(long)]
