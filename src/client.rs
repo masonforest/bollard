@@ -12,7 +12,7 @@ pub struct TxArgs {
     #[arg(long, env = "BOLLARD_KEY")]
     pub key: String,
     /// Node to submit to
-    #[arg(long, env = "BOLLARD_NODE", default_value = "https://bollard.exchange")]
+    #[arg(long, env = "BOLLARD_NODE", default_value = "https://mainnet.bollard.exchange")]
     pub node: String,
     /// Use this nonce instead of asking the node
     #[arg(long)]

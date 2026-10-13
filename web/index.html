@@ -76,12 +76,15 @@
   <h2>Use it</h2>
   <pre>cargo install --git https://github.com/masonforest/bollard
 bollard keygen
-bollard tx --node https://bollard.exchange place-order --market btc:BTC/eth:ETH --side sell \
+bollard tx --node https://mainnet.bollard.exchange place-order --market btc:BTC/eth:ETH --side sell \
   --quantity 100000 --price 1500000000 --bond 100000000 --receive-address 0xYourEthAddress --expiry-height 980000
 bollard tx claim --order &lt;order id&gt; --quantity 100000 --receive-address bc1qYourBitcoinAddress</pre>
-  <p class="muted">Prices are quote atoms per 100,000,000 base atoms. Atoms: sats for BTC, gwei for ETH, 10<sup>-6</sup> for USDC, rill for BLRD. Takers never need BLRD; makers bond it. API: <a href="/status">/status</a> · <a href="/markets">/markets</a> · <a href="/book?market=btc:BTC/eth:ETH">/book</a> · <a href="/entries">/entries</a> · <a href="/epochs">/epochs</a> · <a href="/log/range?from=1">/log/range</a></p>
+  <p class="muted">Prices are quote atoms per 100,000,000 base atoms. Atoms: sats for BTC, gwei for ETH, 10<sup>-6</sup> for USDC, rill for BLRD. Takers never need BLRD; makers bond it. API at <span id="api-host">mainnet.bollard.exchange</span>: <a id="l-status" href="/status">/status</a> · <a id="l-markets" href="/markets">/markets</a> · <a id="l-book" href="/book?market=btc:BTC/eth:ETH">/book</a> · <a id="l-entries" href="/entries">/entries</a> · <a id="l-epochs" href="/epochs">/epochs</a> · <a id="l-log" href="/log/range?from=1">/log/range</a></p>
 </main>
 <script>
+// Served from bollard.exchange the page talks to mainnet.bollard.exchange;
+// served by a node (or locally) it talks to the same origin.
+let API = (location.port || location.hostname.startsWith('mainnet.') || location.hostname === 'localhost') ? '' : 'https://mainnet.' + location.hostname;
 const $ = (id) => document.getElementById(id);
 const short = (h, n = 10) => h ? h.slice(0, n) + '…' : '';
 const assets = {};
@@ -100,7 +103,7 @@ function fmtPrice(price, market) {
 }
 const policy = ['seen', 'included', 'final'];
 
-async function j(url) { const r = await fetch(url); return r.json(); }
+async function j(url) { const r = await fetch(API + url); return r.json(); }
 
 async function loadStatus() {
   const s = await j('/status');
@@ -132,7 +135,7 @@ async function loadMarkets() {
 
 function orderRow(o, cls) {
   const tr = document.createElement('tr');
-  tr.innerHTML = `<td class="mono ${cls}"><a href="/orders?market=${encodeURIComponent(o.market)}">${short(o.id)}</a></td><td class="num">${fmtPrice(o.price, o.market)}</td><td class="num">${fmtAmount(o.qty_left, o.base)}</td><td class="num">${fmtAmount(o.bond_left || o.qty_left, 'BLRD')}</td><td>${policy[o.fill_policy]}</td>`;
+  tr.innerHTML = `<td class="mono ${cls}"><a href="${API}/orders?market=${encodeURIComponent(o.market)}">${short(o.id)}</a></td><td class="num">${fmtPrice(o.price, o.market)}</td><td class="num">${fmtAmount(o.qty_left, o.base)}</td><td class="num">${fmtAmount(o.bond_left || o.qty_left, 'BLRD')}</td><td>${policy[o.fill_policy]}</td>`;
   return tr;
 }
 
@@ -184,10 +187,14 @@ function logLine(ev) {
 async function refresh() { await Promise.all([loadStatus(), loadBook(), loadMatches(), loadEpochs()]); }
 
 (async () => {
+  // Until the API host resolves, fall back to this origin (nginx forwards API paths to the node).
+  if (API) { try { const r = await fetch(API + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) API = ''; } catch { API = ''; } }
+  for (const a of document.querySelectorAll('a[id^="l-"]')) a.href = API + a.getAttribute('href');
+  $('api-host').textContent = API ? API.replace('https://', '') : location.host;
   await loadMarkets();
   await refresh();
   $('market').addEventListener('change', loadBook);
-  const es = new EventSource('/events');
+  const es = new EventSource(API + '/events');
   es.onmessage = (m) => { try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event !== 'Entry') refresh(); else loadStatus(); } catch {} };
   setInterval(refresh, 30000);
 })();

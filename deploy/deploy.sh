@@ -13,6 +13,8 @@ fi
 
 scp "target/$TARGET/release/bollard" "$HOST:/usr/local/bin/bollard.new"
 scp deploy/bollard.initd "$HOST:/etc/init.d/bollard"
+ssh "$HOST" mkdir -p /var/www/bollard.exchange
+scp web/index.html "$HOST:/var/www/bollard.exchange/index.html"
 ssh "$HOST" 'set -e
   chmod +x /etc/init.d/bollard /usr/local/bin/bollard.new
   mv /usr/local/bin/bollard.new /usr/local/bin/bollard

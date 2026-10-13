@@ -18,6 +18,12 @@ respawn_max=0
 start_pre() {
     export PORT=3000
     export DOMAINS=""
+    # TEMPORARY (2026-10-13): the startup history scan from the real BANK_BLOCK
+    # in .env covers 1.4M Base blocks through an RPC that answers "request
+    # limit reached", which keeps the site down for hours. Scanning from near
+    # the head brings it up in a minute; the activity list only shows events
+    # from here on. Remove this line and restart once the RPC quota is fixed.
+    export BANK_BLOCK=52553000
 }
 
 depend() {

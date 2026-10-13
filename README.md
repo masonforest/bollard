@@ -32,7 +32,7 @@ The fee is the entry's weight. The block that includes it runs the draw; if you 
 
 ```sh
 bollard keygen
-bollard tx --node https://bollard.exchange place-order --market btc:BTC/eth:ETH --side sell \
+bollard tx --node https://mainnet.bollard.exchange place-order --market btc:BTC/eth:ETH --side sell \
   --quantity 100000 --price 1500000000 --bond 100000000 --receive-address 0x... --expiry-height 980000
 bollard tx claim --order <id> --quantity 100000 --receive-address bc1q...
 # pay the maker on their chain, then:
