@@ -205,7 +205,7 @@ function showSwap() {
   if (!swap) { $('s-swap').classList.add('hidden'); return; }
   $('s-swap').classList.remove('hidden');
   $('s-pay-exact').textContent = fromAtoms(swap.payAtoms, swap.payAsset);
-  $('s-pay-chain').textContent = assets[swap.payAsset]?.chain === 'btc' ? 'Bitcoin' : assets[swap.payAsset]?.chain === 'eth' ? 'Ethereum' : assets[swap.payAsset]?.chain;
+  $('s-pay-chain-name').textContent = assets[swap.payAsset]?.chain === 'btc' ? 'Bitcoin' : assets[swap.payAsset]?.chain === 'eth' ? 'Ethereum' : assets[swap.payAsset]?.chain;
   $('s-pay-to').textContent = swap.payTo;
   $('s-match').textContent = short(swap.match, 16);
   try {
