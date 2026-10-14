@@ -57,7 +57,7 @@ impl IntoResponse for ApiError {
 type ApiResult = Result<Json<Value>, ApiError>;
 
 async fn index() -> Html<&'static str> {
-    Html(include_str!("../web/index.html"))
+    Html(include_str!("../web/dashboard/index.html"))
 }
 
 async fn status(State(n): S) -> ApiResult {

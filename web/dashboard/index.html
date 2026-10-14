@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bollard</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#e4e4e4; --accent:#1f5fbf; --ok:#1a7f37; --bad:#b42318; --card:#fafafa; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#9a9a9a; --line:#2a2a2a; --accent:#6ea0ff; --ok:#3fb950; --bad:#f85149; --card:#181818; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 10px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 18px; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 18px; font-weight: 600; margin-top: 2px; word-break: break-all; }
+  .card .v.small { font-size: 13px; font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table { width:100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .book { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .bid { color: var(--ok); } .ask { color: var(--bad); }
+  select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  .row { display:flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  #log { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow:auto; border:1px solid var(--line); border-radius: 10px; }
+  #log li { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  #log li:last-child { border-bottom: 0; }
+  .pill { display:inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.leader { color: var(--ok); border-color: var(--ok); }
+  a { color: var(--accent); text-decoration: none; }
+  pre { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px; overflow:auto; font-size: 12.5px; }
+  @media (max-width: 720px) { .book { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="row" style="justify-content: space-between">
+    <h1><a href="/" style="color:inherit">Bollard</a> <small>dashboard</small></h1>
+    <span id="role" class="pill">connecting</span>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="k">Bitcoin height</div><div class="v" id="height">–</div></div>
+    <div class="card"><div class="k">Log head</div><div class="v" id="head">–</div></div>
+    <div class="card"><div class="k">Leader (key hash)</div><div class="v small" id="leader">–</div></div>
+    <div class="card"><div class="k">Open orders</div><div class="v" id="open-orders">–</div></div>
+    <div class="card"><div class="k">Open matches</div><div class="v" id="open-matches">–</div></div>
+    <div class="card"><div class="k">Lottery entries seen</div><div class="v" id="entries">–</div></div>
+  </div>
+
+  <h2>Order book</h2>
+  <div class="row">
+    <select id="market"></select>
+    <span class="muted" id="market-note"></span>
+  </div>
+  <div class="book" style="margin-top: 10px">
+    <div><table><thead><tr><th>Bids</th><th class="num">Price</th><th class="num">Quantity</th><th class="num">Bond</th><th>Fill</th></tr></thead><tbody id="bids"></tbody></table></div>
+    <div><table><thead><tr><th>Asks</th><th class="num">Price</th><th class="num">Quantity</th><th class="num">Bond</th><th>Fill</th></tr></thead><tbody id="asks"></tbody></table></div>
+  </div>
+
+  <h2>Open matches</h2>
+  <table><thead><tr><th>Match</th><th>Market</th><th class="num">Quantity</th><th class="num">Price</th><th>Taker leg</th><th>Maker leg</th><th>Claimed at</th></tr></thead><tbody id="matches"></tbody></table>
+
+  <h2>Live</h2>
+  <ul id="log"></ul>
+
+  <h2>Lottery</h2>
+  <table><thead><tr><th>Height</th><th>Entry</th><th>Leader</th><th>Where</th><th>Checkpoint</th></tr></thead><tbody id="epochs"></tbody></table>
+
+  <h2>Use it</h2>
+  <pre>cargo install --git https://github.com/masonforest/bollard
+bollard keygen
+bollard tx --node https://mainnet.bollard.exchange place-order --market btc:BTC/eth:ETH --side sell \
+  --quantity 100000 --price 1500000000 --bond 100000000 --receive-address 0xYourEthAddress --expiry-height 980000
+bollard tx claim --order &lt;order id&gt; --quantity 100000 --receive-address bc1qYourBitcoinAddress</pre>
+  <p class="muted">Prices are quote atoms per 100,000,000 base atoms. Atoms: sats for BTC, gwei for ETH, 10<sup>-6</sup> for USDC, rill for BLRD. Takers never need BLRD; makers bond it. API at <span id="api-host">mainnet.bollard.exchange</span>: <a id="l-status" href="/status">/status</a> · <a id="l-markets" href="/markets">/markets</a> · <a id="l-book" href="/book?market=btc:BTC/eth:ETH">/book</a> · <a id="l-entries" href="/entries">/entries</a> · <a id="l-epochs" href="/epochs">/epochs</a> · <a id="l-log" href="/log/range?from=1">/log/range</a></p>
+</main>
+<script>
+// Served from bollard.exchange the page talks to mainnet.bollard.exchange;
+// served by a node (or locally) it talks to the same origin.
+let API = (location.port || location.hostname.startsWith('mainnet.') || location.hostname === 'localhost') ? '' : 'https://mainnet.' + location.hostname;
+const $ = (id) => document.getElementById(id);
+const short = (h, n = 10) => h ? h.slice(0, n) + '…' : '';
+const assets = {};
+let priceScale = 1e8;
+
+function fmtAmount(atoms, assetId) {
+  const a = assets[assetId]; if (!a) return String(atoms);
+  const d = a.decimals; const s = String(atoms).padStart(d + 1, '0');
+  return (s.slice(0, -d) + '.' + s.slice(-d)).replace(/\.?0+$/, '') + ' ' + a.symbol;
+}
+function fmtPrice(price, market) {
+  const [b, q] = market.split('/'); const qa = assets[q], ba = assets[b]; if (!qa || !ba) return String(price);
+  // quote atoms per 1e8 base atoms -> quote units per base unit
+  const perBase = price / Math.pow(10, qa.decimals) / (1e8 / Math.pow(10, ba.decimals));
+  return perBase.toLocaleString(undefined, { maximumSignificantDigits: 8 }) + ' ' + qa.symbol + '/' + ba.symbol;
+}
+const policy = ['seen', 'included', 'final'];
+
+async function j(url) { const r = await fetch(API + url); return r.json(); }
+
+async function loadStatus() {
+  const s = await j('/status');
+  $('height').textContent = s.bitcoin ? s.bitcoin.height.toLocaleString() : '–';
+  $('head').textContent = s.head.seq.toLocaleString();
+  $('leader').textContent = s.epoch ? s.epoch.leader_key_hash : '–';
+  $('open-orders').textContent = s.counts.open_orders;
+  $('open-matches').textContent = s.counts.open_matches;
+  $('entries').textContent = s.counts.entries;
+  const r = s.role; const el = $('role');
+  el.textContent = r.role === 'Leader' ? 'this node is the leader' : r.role === 'Follower' ? 'following ' + r.url : r.role.toLowerCase() + (r.reason ? ': ' + r.reason : '');
+  el.className = 'pill' + (r.role === 'Leader' ? ' leader' : '');
+}
+
+async function loadMarkets() {
+  const m = await j('/markets');
+  priceScale = m.price_scale;
+  for (const a of m.assets) assets[a.id] = a;
+  const sel = $('market'); const current = sel.value;
+  const all = new Set(m.active.map(x => x.market));
+  for (const base of m.assets) for (const quote of m.assets) {
+    if (base.id === quote.id || quote.id === 'BLRD') continue;
+    all.add(base.id + '/' + quote.id);
+  }
+  sel.innerHTML = '';
+  for (const mk of [...all].sort()) { const o = document.createElement('option'); o.value = o.textContent = mk; sel.appendChild(o); }
+  sel.value = current || (m.active[0] ? m.active[0].market : 'btc:BTC/eth:ETH');
+}
+
+function orderRow(o, cls) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="mono ${cls}"><a href="${API}/orders?market=${encodeURIComponent(o.market)}">${short(o.id)}</a></td><td class="num">${fmtPrice(o.price, o.market)}</td><td class="num">${fmtAmount(o.qty_left, o.base)}</td><td class="num">${fmtAmount(o.bond_left || o.qty_left, 'BLRD')}</td><td>${policy[o.fill_policy]}</td>`;
+  return tr;
+}
+
+async function loadBook() {
+  const market = $('market').value; if (!market) return;
+  const b = await j('/book?market=' + encodeURIComponent(market));
+  if (b.error) { $('market-note').textContent = b.error; return; }
+  const [base, quote] = market.split('/');
+  $('market-note').textContent = `price in ${assets[quote]?.symbol || quote} per ${assets[base]?.symbol || base}`;
+  $('bids').replaceChildren(...b.bids.map(o => orderRow(o, 'bid')));
+  $('asks').replaceChildren(...b.asks.map(o => orderRow(o, 'ask')));
+  if (!b.bids.length && !b.asks.length) { const tr = document.createElement('tr'); tr.innerHTML = '<td colspan="5" class="muted">no resting orders</td>'; $('bids').appendChild(tr); }
+}
+
+function legText(txid, included) { return txid ? `<span class="mono">${short(txid, 12)}</span> ${included ? 'in block' : 'reported'}` : '<span class="muted">waiting</span>'; }
+
+async function loadMatches() {
+  const ms = await j('/matches?status=open&limit=50');
+  $('matches').replaceChildren(...ms.map(m => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono">${short(m.id)}</td><td>${m.market}</td><td class="num">${fmtAmount(m.quantity, m.market.split('/')[0])}</td><td class="num">${fmtPrice(m.price, m.market)}</td><td>${legText(m.taker_txid, m.taker_included_height)}</td><td>${m.maker_chain === 'blrd' ? 'on the ledger' : legText(m.maker_txid, m.maker_included_height)}</td><td>${new Date(m.claimed_ts).toLocaleString()}</td>`;
+    return tr;
+  }));
+  if (!ms.length) { const tr = document.createElement('tr'); tr.innerHTML = '<td colspan="7" class="muted">none</td>'; $('matches').appendChild(tr); }
+}
+
+async function loadEpochs() {
+  const es = await j('/epochs');
+  $('epochs').replaceChildren(...es.slice(0, 20).map(e => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${e.height.toLocaleString()}</td><td class="mono">${e.entry_txid ? `<a href="https://mempool.space/tx/${e.entry_txid}">${short(e.entry_txid, 12)}</a>` : 'genesis'}</td><td class="mono">${short(e.leader_key_hash, 12)}</td><td class="mono">${e.leader_url || ''}</td><td class="mono">${short(e.checkpoint_tip, 12)}</td>`;
+    return tr;
+  }));
+}
+
+function logLine(ev) {
+  const li = document.createElement('li');
+  const t = new Date().toLocaleTimeString();
+  let text = ev.event;
+  if (ev.event === 'Entry') text = `#${ev.seq} ${ev.kind}`;
+  else if (ev.event === 'OrderPlaced') text = `order ${short(ev.order)} ${ev.side ? 'sell' : 'buy'} ${ev.market} qty ${ev.quantity} @ ${ev.price}`;
+  else if (ev.event === 'Claimed') text = `claim ${short(ev.match)} on ${short(ev.order)} qty ${ev.quantity}`;
+  else if (ev.event === 'EpochStart') text = `epoch ${ev.height} led by ${short(ev.leader, 12)}, reward ${ev.reward} rill`;
+  else text = ev.event + ' ' + Object.entries(ev).filter(([k]) => k !== 'event').map(([k, v]) => `${k}=${typeof v === 'string' ? short(v, 14) : v}`).join(' ');
+  li.innerHTML = `<span class="muted mono">${t}</span> &nbsp; ${text}`;
+  const log = $('log'); log.prepend(li); while (log.children.length > 60) log.lastChild.remove();
+}
+
+async function refresh() { await Promise.all([loadStatus(), loadBook(), loadMatches(), loadEpochs()]); }
+
+(async () => {
+  // Until the API host resolves, fall back to this origin (nginx forwards API paths to the node).
+  if (API) { try { const r = await fetch(API + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) API = ''; } catch { API = ''; } }
+  for (const a of document.querySelectorAll('a[id^="l-"]')) a.href = API + a.getAttribute('href');
+  $('api-host').textContent = API ? API.replace('https://', '') : location.host;
+  await loadMarkets();
+  await refresh();
+  $('market').addEventListener('change', loadBook);
+  const es = new EventSource(API + '/events');
+  es.onmessage = (m) => { try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event !== 'Entry') refresh(); else loadStatus(); } catch {} };
+  setInterval(refresh, 30000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bollard white paper</title>
+<meta name="description" content="Bollard protocol design: a cross-chain order book finalized on Bitcoin.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <nav>
+    <a href="/">Bollard</a>
+    <a href="/dashboard/">Dashboard</a>
+    <a href="/whitepaper/" class="here">White paper</a>
+    <a href="https://github.com/masonforest/bollard">Source</a>
+    <a href="https://mainnet.bollard.exchange/status">API</a>
+  </nav>
+<h1>Bollard: Protocol Design v0.1</h1>
+<p>October 2026</p>
+<h2>Summary</h2>
+<p>Bollard is a cross-chain exchange with a real order book, settled by direct payments between traders, and finalized on Bitcoin. Users post bids and asks on the network. A taker claims an order and pays the maker first, on the maker's chain; the maker then pays the taker, and a bond in the network token (BLRD) posted by the maker backs that second payment. A maker that fills on sight makes the swap take seconds; finality and the bond release catch up in the background. Nobody custodies anything: no vaults, no wrapped coins, no threshold signatures.</p>
+<p>One leader at a time sequences transactions in realtime. That leader is chosen by a fee-weighted lottery, run entirely through Bitcoin OP_RETURN data, in every Bitcoin block that has entries. A Bitcoin miner can enter at no cost, because the entry fee is paid to whoever mines the block. This is by design. The leader's log is finalized when the next winning lottery entry commits to it on Bitcoin.</p>
+<h2>Actors and components</h2>
+<p>There are five kinds of participant. Only the leader has any power, and only for one Bitcoin block at a time.</p>
+<table>
+<thead>
+<tr>
+<th>Actor</th>
+<th>Does</th>
+<th>Gets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Maker</td>
+<td>Rests orders backed by a BLRD bond; pays the taker once the taker's payment is in a block</td>
+<td>The spread; the bond back once its own payment is deep</td>
+</tr>
+<tr>
+<td>Taker</td>
+<td>Claims an order and pays the maker first, on the maker's chain; needs no BLRD</td>
+<td>The asset bought, or the maker's bond if the maker fails to deliver</td>
+</tr>
+<tr>
+<td>Node (follower)</td>
+<td>Replays the leader's log, watches external chains, serves reads</td>
+<td>Nothing directly; runs one to verify and to be eligible to lead</td>
+</tr>
+<tr>
+<td>Leader</td>
+<td>The node whose lottery entry won the current Bitcoin block; sequences every transaction in realtime, asserts external confirmations, mints its reward</td>
+<td>The block's BLRD issuance plus all fees in that epoch</td>
+</tr>
+<tr>
+<td>Bitcoin miner</td>
+<td>Mines blocks as usual; may include its own lottery entry and pay the entry fee to itself</td>
+<td>Leadership of the block it mines, at no cost</td>
+</tr>
+<tr>
+<td>External chains</td>
+<td>The chains the supported assets live on carry the actual payments; the network only watches them</td>
+<td>Ordinary transaction fees</td>
+</tr>
+</tbody>
+</table>
+<p>Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, orders, matches, legs), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.</p>
+<p>Bitcoin picks the leader and finalizes its log, traders pay each other on the external chains, and the nodes sequence and watch without ever holding coins.</p>
+<h2>The Bitcoin lottery</h2>
+<p>One Bitcoin transaction does three jobs: it enters the lottery, it announces where the entrant's node lives, and it commits to a checkpoint of the log. Bollard never writes anything else to Bitcoin.</p>
+<h3>Entry transaction</h3>
+<p>Any Bitcoin transaction with exactly one OP_RETURN output carrying this 75-byte payload:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Bytes</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>magic</td>
+<td>4</td>
+<td><code>BLRD</code></td>
+</tr>
+<tr>
+<td>version</td>
+<td>1</td>
+<td><code>0x01</code></td>
+</tr>
+<tr>
+<td>key hash</td>
+<td>20</td>
+<td>HASH160 of the entrant's secp256k1 signing key (the key itself is revealed in the node's first signed log entry)</td>
+</tr>
+<tr>
+<td>ip</td>
+<td>16</td>
+<td>IPv6, or IPv4 mapped (<code>::ffff:a.b.c.d</code>)</td>
+</tr>
+<tr>
+<td>port</td>
+<td>2</td>
+<td>big-endian</td>
+</tr>
+<tr>
+<td>tip</td>
+<td>32</td>
+<td>hash of the newest log entry the entrant has seen; all zeros at genesis</td>
+</tr>
+</tbody>
+</table>
+<p>75 bytes sits under the 80-byte limit that older Bitcoin Core versions relay by default, so no node operator has to change settings.</p>
+<h3>Weight</h3>
+<p>Weight = the entry transaction's fee in satoshis (inputs minus outputs). No burn address and no special output: the fee simply goes to the miner, so Bitcoin miners are paid by the lottery without having to know Bollard exists. A miner who includes its own entry pays the fee to itself, so for a miner entering is free and winning is guaranteed by setting the fee above every other entry in the block. That is the intended way miners opt in.</p>
+<p>Consequence: non-miners only ever win blocks whose miner did not enter, with probability fee / total fees of entries in that block. If every pool opts in, leadership follows hash rate exactly.</p>
+<h3>The draw for block N</h3>
+<ol>
+<li>Eligible entries = valid entries in block N. An entry is used once; it does not carry over.</li>
+<li>seed = SHA256d(block hash of N, then the string <code>bollard/v1</code>).</li>
+<li>Rank the entries by drawing them one at a time, each draw weighted by fee, with no entry drawn twice. Draw number i (starting at 0) goes like this: compute r = SHA256(seed, i) modulo the total fee of the entries not yet drawn. Then go through the undrawn entries in txid order, adding up their fees as you go; the first entry at which the running total exceeds r is drawn and takes rank i. Repeat until no entries are left. An entry's chance of being drawn first is its fee divided by the block's total entry fees, and every node gets the same ranking because the seed, the fees and the txid order all come from the block.</li>
+<li>Leader for block N = the first entry in rank order whose tip commitment is valid: the committed entry exists and descends from the checkpoint of block N−1.</li>
+<li>If block N has no entries, or none that are valid, nothing changes: the leader of block N−1 keeps leading through block N, the checkpoint stays where it was, and no reward is minted for block N. After genesis there is always exactly one leader; a block without a lottery is just a block the leader keeps working through. If the leader fails during such a stretch, failover uses the rank order from the most recent block that had entries, then earlier leaders.</li>
+</ol>
+<p>Every node computes the same ranking from Bitcoin data alone. The ranking also gives the fallback order if the winner is unreachable.</p>
+<h3>Self-election</h3>
+<p>The miner of block N chooses which entries it includes and can always win. Grinding the block hash to favor a particular non-self entry is pointless: the miner can just enter itself. So the only thing a miner gains is one epoch of leadership per block it mines, which is exactly what the design offers.</p>
+<h3>Checkpoint commitment</h3>
+<p>The winning entry's tip becomes the checkpoint for block N. A later entry whose tip does not descend from the current checkpoint is invalid and skipped (rule 4), so checkpoints only move forward. The winner's own sequencing continues from the newest log entry it holds, which is at or after its committed tip, so finality trails the live head by a few seconds to a few minutes.</p>
+<h2>Realtime sequencing</h2>
+<p>The leader is a sequencer: it takes signed transactions over the network, orders them, applies them, and streams the result. Nothing waits for a block.</p>
+<h3>Leader duties</h3>
+<ol>
+<li>Accept transactions at the IP and port from its entry.</li>
+<li>Validate each against current state: signature, nonce, balances, order rules.</li>
+<li>Append a log entry and apply it to the state as one atomic step, then stream the entry to followers and return a signed receipt to the sender. Target: under 50 ms end to end.</li>
+<li>Watch the external chains and append confirmation entries as payments confirm.</li>
+</ol>
+<h3>Log entry</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>seq</td>
+<td>integer, starts at 1, increases by 1</td>
+</tr>
+<tr>
+<td>prev</td>
+<td>hash of the previous entry</td>
+</tr>
+<tr>
+<td>height</td>
+<td>Bitcoin height of the leader's epoch</td>
+</tr>
+<tr>
+<td>time</td>
+<td>leader's clock in ms; never decreases; informational only</td>
+</tr>
+<tr>
+<td>kind</td>
+<td>one of the kinds below</td>
+</tr>
+<tr>
+<td>payload</td>
+<td>the user transaction with its signature, or the leader's assertion</td>
+</tr>
+<tr>
+<td>leader</td>
+<td>the leader's key</td>
+</tr>
+<tr>
+<td>sig</td>
+<td>leader's signature over the fields above</td>
+</tr>
+<tr>
+<td>hash</td>
+<td>SHA256 of the entry; becomes the next entry's prev</td>
+</tr>
+</tbody>
+</table>
+<h3>Kinds</h3>
+<ul>
+<li>User-signed: Register, Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment.</li>
+<li>Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (releases or slashes the bond), Handoff (reason, replaced leader).</li>
+</ul>
+<p>Rule: every leader-asserted entry must be checkable by any node from Bitcoin, the external chains and prior state. A follower that finds one false treats the log as invalid from that entry on.</p>
+<h3>Handoff at a new block</h3>
+<p>A block with no valid winner causes no handoff; the current leader simply continues. When block N+1 arrives with a valid winner, the winner starts from the newest entry it holds; its first entry is EpochStart with prev = that entry. The old leader stops when it sees the block or the new leader's first entry. Anything the old leader signed after that point is orphaned and gets resubmitted; nonces make resubmission harmless.</p>
+<h3>Failover inside an epoch</h3>
+<p>If followers cannot reach the leader for 30 s, they treat it as down. They move to the next entry in that block's rank order, and if the ranking is exhausted, to the previous epoch's leader. The replacement's first entry is Handoff, built on the newest entry it holds. Two leaders may briefly coexist; the next block's winning commitment decides which log survives.</p>
+<h2>Finality</h2>
+<p>Two levels, and users pick the one they trust for a given amount, the same way they pick confirmations on Bitcoin.</p>
+<ul>
+<li>Soft: a signed receipt from the current leader. It holds unless the leader fails, equivocates or is replaced before the next block. Fine for placing and cancelling orders and for small transfers.</li>
+<li>Hard: an entry is final once it is an ancestor of the tip committed by a winning entry on Bitcoin. Reverting it means reorging Bitcoin past that block. Wait 1 block for ordinary trades (the settlement legs take longer anyway) and 6 for large BLRD transfers.</li>
+</ul>
+<h3>Fork choice</h3>
+<ul>
+<li>The canonical log is the chain of winning commitments on Bitcoin, followed by the current leader's live entries.</li>
+<li>Validity beats anchoring. An invalid entry invalidates everything after it, and an entry that commits to an invalid tip is skipped in the draw. A leader cannot make a false confirmation final by getting it committed.</li>
+<li>Availability: an entrant whose committed tip a node cannot fetch (from the entrant's own IP, then from other followers) is skipped by that node. Followers gossip log segments, so this converges, and any split heals at the next block.</li>
+</ul>
+<h3>Bitcoin reorgs</h3>
+<p>Bollard follows Bitcoin's chain exactly. If Bitcoin reorgs, the epochs, leaders and checkpoints of the replaced blocks are recomputed, and live entries from a replaced leader are orphaned and resubmitted. There is no built-in confirmation lag; depth is the user's choice, as on Bitcoin.</p>
+<h2>Order book and matching</h2>
+<p>The book lives in the log, and every node rebuilds it from there. Makers rest bonded orders; takers claim them. A claim is matched on entry against the best resting orders at or better than its price, and each assignment is a match.</p>
+<h3>Assets and markets</h3>
+<ul>
+<li>An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.</li>
+<li>Supported assets are those the node software has an adapter for. Which assets ship first is an implementation decision, not part of this design; adding one is a software release, not a vote.</li>
+<li>A market is any pair of supported assets, priced as quote per base.</li>
+</ul>
+<h3>Resting order (maker)</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>market, side</td>
+<td>a pair of supported assets, and buy or sell</td>
+</tr>
+<tr>
+<td>quantity</td>
+<td>in base units; partial claims allowed</td>
+</tr>
+<tr>
+<td>price</td>
+<td>limit, quote per base</td>
+</tr>
+<tr>
+<td>bond</td>
+<td>BLRD per unit of base, locked from the maker's account at placement</td>
+</tr>
+<tr>
+<td>claim bond</td>
+<td>BLRD a claimant must lock to claim; default 0</td>
+</tr>
+<tr>
+<td>fill policy</td>
+<td>when the maker delivers: on seeing the taker's payment, on its inclusion (the protocol's own trigger), or on its finality; shown in the book</td>
+</tr>
+<tr>
+<td>receive address</td>
+<td>the maker's address on the chain of the asset being bought; fresh per order</td>
+</tr>
+<tr>
+<td>expiry</td>
+<td>a Bitcoin height; the order cancels itself there</td>
+</tr>
+</tbody>
+</table>
+<h3>Claim (taker)</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>target</td>
+<td>one order id, or a market, side and limit price</td>
+</tr>
+<tr>
+<td>quantity</td>
+<td>up to the remainder of the orders it hits</td>
+</tr>
+<tr>
+<td>receive address</td>
+<td>the taker's address on the chain of the asset being bought</td>
+</tr>
+</tbody>
+</table>
+<h3>Rules</h3>
+<ol>
+<li>Price-time priority among resting orders: best price first, then lowest seq.</li>
+<li>Only makers bond. A resting order locks bond-per-unit times quantity from the maker's account at placement. A claim locks nothing unless the order asks for a claim bond.</li>
+<li>A claim is matched on entry against resting orders at or better than its price, up to its quantity. Each assignment is a match with its own legs. An unmatched remainder is dropped, never rested; to rest, post a bonded order.</li>
+<li>A claimed order is held for the claimant for 3 minutes of leader time. If no payment txid is posted by then, it reopens for anyone.</li>
+<li>Cancel removes the unclaimed remainder at once. Claimed quantity cannot be cancelled.</li>
+<li>Markets with BLRD as the base: the maker's BLRD is escrowed at placement and released to the taker by the ledger when the taker's payment is in a block. No maker action, no separate bond.</li>
+<li>Dust: each adapter sets a minimum quantity for its asset.</li>
+</ol>
+<p>A match does not move coins. It records who owes what to whom and holds the maker's bond; settlement is the next section.</p>
+<h2>Settlement and bonds</h2>
+<p>The taker pays first, the maker pays second, and only the maker holds a bond. A taker who never pays loses nothing but the claim. A maker who never pays loses the bond to the taker.</p>
+<h3>Steps for a match</h3>
+<ol>
+<li>Claim. The taker claims one order, or the best orders at a price up to a quantity. The claim is sequenced in milliseconds and the book shows the order as claimed. The taker has 3 minutes of leader time to post a payment txid, or the claim expires and the order reopens for anyone.</li>
+<li>Taker pays. The taker sends the quote asset to the maker's receive address and posts ReportPayment(match, txid).</li>
+<li>Taker's leg is included. Every node watches the chain for the payment to land in a block. The leader appends LegIncluded(leg, txid, block hash, height). That is the protocol's trigger. If the payment is not in a block within the taker deadline, counted in Bitcoin blocks from the claim, the claim is void and the order reopens. If a reorg later removes it, the match is void and the order reopens; a maker that had already delivered takes that loss.</li>
+<li>Maker pays. The maker sends the base asset to the taker's receive address as soon as the taker's payment reaches the order's fill policy (seen, included or final), and posts ReportPayment. The maker deadline runs from the taker's LegIncluded. Filling on sight is the maker's own risk, priced into its spread.</li>
+<li>Anyone may pay the maker's leg. The bond is released to whoever's payment satisfied it. If the maker is slow or gone, a third party can deliver and take the bond. That is the repo.</li>
+<li>Maker's leg is included; the taker has the coins. The bond is released only once that payment is deep (the depth each chain's adapter sets, at or beyond that chain's own finality), so a maker cannot profit from a reorg of its own payment. The wait costs the maker nothing but time.</li>
+<li>MatchClosed. The bond, minus the match fee, is released to the payer of the maker's leg.</li>
+</ol>
+<h3>Outcomes</h3>
+<table>
+<thead>
+<tr>
+<th>What happened</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Taker never posts a txid</td>
+<td>Claim expires after 3 minutes; order reopens; any claim bond goes to the maker</td>
+</tr>
+<tr>
+<td>Taker's payment not in a block by the taker deadline, or reorged out afterwards</td>
+<td>Claim void; order reopens; any claim bond goes to the maker; a maker that already delivered takes the loss</td>
+</tr>
+<tr>
+<td>Maker's payment not deep by the maker deadline plus 2 blocks of grace</td>
+<td>Maker's bond goes to the taker in full; order cancelled</td>
+</tr>
+<tr>
+<td>Maker's payment reorged out before it is deep</td>
+<td>Counts as not delivered; same as the row above</td>
+</tr>
+<tr>
+<td>Maker's payment deep</td>
+<td>Bond released, minus the fee, to whoever paid the maker's leg; match closed</td>
+</tr>
+</tbody>
+</table>
+<p>Partial claims prorate the bond.</p>
+<h3>Speed</h3>
+<p>A swap feels done when the taker sees the asset in their wallet, and that happens as soon as the maker fills. A maker whose policy is seen fills within seconds of the taker's payment reaching the mempool; finality and the bond release run in the background and nobody waits for them. The maker fronts its own asset and carries its own risk, which is what makes the speed possible.</p>
+<table>
+<thead>
+<tr>
+<th>Direction</th>
+<th>Taker sees the asset</th>
+<th>Confirmed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>From a 12-second chain into Bitcoin, maker fills on sight</td>
+<td>BTC in the mempool 5 to 15 s after the claim</td>
+<td>1 Bitcoin block, about 10 min</td>
+</tr>
+<tr>
+<td>From Bitcoin into a 12-second chain, maker fills on sight</td>
+<td>the asset in the next block, about 15 s after the claim</td>
+<td>that chain's next block; final per that chain</td>
+</tr>
+<tr>
+<td>Between 2-second chains, maker fills on sight</td>
+<td>about 5 s</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>Any pair, maker fills on finality</td>
+<td>13 to 30 min</td>
+<td>same</td>
+</tr>
+</tbody>
+</table>
+<p>The book shows each maker's median fill time, computed from the log as the gap between the taker's ReportPayment and the maker's. Fast makers earn the flow. Nothing enforces the promise except that number, and nothing needs to: the maker has posted the bond, the taker has already paid, and the deadline is the backstop.</p>
+<h3>Why this flow</h3>
+<ol>
+<li>The taker pays first, so takers never need BLRD; only makers bond. A claim before paying means two takers cannot pay the same maker for one order: the second claim waits or goes to the next order. The maker pays once the taker's payment is in a block, and carries only the small reorg risk of recent blocks.</li>
+<li>A slashed bond goes to the counterparty in full: the taker already paid, and nothing is burned. If a third party delivered the maker's leg, the bond goes to them instead, which is what makes the repo worth doing.</li>
+</ol>
+<h3>Bond sizing</h3>
+<p>There is no price oracle, so the protocol cannot judge whether a bond covers an order. The maker sets the bond in BLRD per unit; the interface shows its value from the network's own BLRD markets, and takers see it before they claim. A bond equal to the order's value means a defaulting maker loses exactly what it owed. A premium, say 110%, removes the maker's free option when BLRD falls against the base asset, and makes it worth a third party's while to deliver in the maker's place. Either is the maker's choice in v1.</p>
+<h2>Token economics</h2>
+<p>BLRD has three jobs: back trades (bonds), pay for sequencing (fees to the leader), and reward leaders (issuance). It is never needed to hold or move the external assets.</p>
+<h3>Issuance</h3>
+<p>Proposal: each block's leader mints R = Bitcoin's block subsidy at that height, denominated in BLRD. That is 3.125 BLRD per block today, halving when Bitcoin halves, reaching zero around 2140. The curve is already understood by everyone, so nobody has to argue about it. It is minted in EpochStart; a block with no valid entry mints nothing.</p>
+<p>Alternatives: a flat 1 BLRD per block (no halvings to explain), or no issuance at all with a genesis allocation (less boring, more arguing).</p>
+<h3>Fees</h3>
+<p>Flat, in BLRD, paid to the leader of the epoch the entry lands in. Flat fees need no oracle.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Fee</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Register, PlaceOrder, CancelOrder, Claim, ReportPayment</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Match</td>
+<td>0.001 BLRD, paid by the maker out of the bond at MatchClosed</td>
+</tr>
+<tr>
+<td>Transfer</td>
+<td>0.0001 BLRD</td>
+</tr>
+</tbody>
+</table>
+<p>Placing orders and claiming are free, so the book stays deep and takers never need BLRD. The maker pays a little per match; that is the price of sequencing. Claim spam is handled by a maker-set claim bond or a per-account rate limit, not by a fee. Fees are fixed per software version.</p>
+<h3>Burns</h3>
+<p>Nothing burns in v1. Every slashed bond goes to the party who was owed.</p>
+<h3>How a newcomer gets BLRD</h3>
+<p>Takers never need BLRD, so most people never buy it. A maker buys it on a BLRD market as a taker: claim, pay, and the seller's escrowed BLRD is released when the payment is in a block. Leaders receive all new BLRD, so they are the natural first sellers. No faucet, no airdrop, no presale.</p>
+<h2>Nodes</h2>
+<p>A node follows Bitcoin, replays the log, keeps the state, and watches the chains it trades on. Everything specific to a chain lives in that chain's adapter.</p>
+<h3>Modes</h3>
+<ul>
+<li>follower (default): syncs the log from the leader, verifies everything, serves reads, forwards writes to the leader.</li>
+<li>leader: switches on by itself when the node's entry wins. Same program.</li>
+<li>enter: builds and broadcasts an entry transaction carrying the node's current tip.</li>
+</ul>
+<h3>Determinism</h3>
+<ul>
+<li>No wall clock inside the state transition. The only time is Bitcoin height; the leader's <code>time</code> field is never used for a decision.</li>
+<li>Integers in base units everywhere; no floats.</li>
+<li>Payloads have one canonical encoding before hashing and signing.</li>
+</ul>
+<h2>Security analysis</h2>
+<p>The worst a leader can do is waste one Bitcoin block. It cannot take coins, because it never holds any, and it cannot make a lie final, because every node checks every assertion.</p>
+<table>
+<thead>
+<tr>
+<th>Threat</th>
+<th>Worst case</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Leader equivocates (two logs)</td>
+<td>Soft receipts in that epoch are unreliable</td>
+<td>Next block's winning commitment picks one log; users wait for hard finality on anything that matters; a leader bond is a v2 option</td>
+</tr>
+<tr>
+<td>Leader censors transactions</td>
+<td>Delay of one epoch</td>
+<td>Deadlines and the 2-block grace are measured in Bitcoin blocks, so two consecutive censoring leaders are needed to cause a wrongful default</td>
+</tr>
+<tr>
+<td>Leader asserts a false LegIncluded</td>
+<td>A bond could be released or slashed wrongly</td>
+<td>Every follower verifies against its own chain node; the log is invalid from that entry on, and later winners that build on it are skipped</td>
+</tr>
+<tr>
+<td>Leader withholds the log it committed to</td>
+<td>Nodes cannot verify the checkpoint</td>
+<td>Entrant is skipped; followers gossip log segments; the next block resolves any split</td>
+</tr>
+<tr>
+<td>Miner elects itself</td>
+<td>One epoch of leadership per block mined</td>
+<td>Intended; that is the opt-in path for miners</td>
+</tr>
+<tr>
+<td>Sybil entries</td>
+<td>None</td>
+<td>Weight is the fee; splitting a fee across entries changes nothing</td>
+</tr>
+<tr>
+<td>Bitcoin reorg</td>
+<td>Replaced blocks' epochs are recomputed</td>
+<td>Users wait the depth they want, as on Bitcoin</td>
+</tr>
+<tr>
+<td>Maker takes the payment and never delivers</td>
+<td>Taker is out the payment</td>
+<td>Maker's bond goes to the taker in full; anyone may deliver in the maker's place and take the bond</td>
+</tr>
+<tr>
+<td>Thin bonds</td>
+<td>A maker defaults when the price moves against it</td>
+<td>Makers set bonds and takers see them before claiming; a premium bond makes third-party delivery worthwhile; a protocol minimum from the internal BLRD markets later</td>
+</tr>
+<tr>
+<td>Claim and never pay (griefing)</td>
+<td>A maker's order is locked for 3 minutes</td>
+<td>Claim expires and the order reopens; a maker-set claim bond goes to the maker; per-account rate limit</td>
+</tr>
+<tr>
+<td>Maker fills on sight (policy seen)</td>
+<td>The taker replaces the unconfirmed payment and keeps both sides</td>
+<td>The maker's choice, priced into its spread; cap by size; on Bitcoin, only for payments that do not signal replace-by-fee</td>
+</tr>
+<tr>
+<td>Unreachable or DoS'd leader</td>
+<td>Stall of up to 30 s</td>
+<td>Failover to the next ranked entry, then the previous leader; the leader's IP is public by design, so run it like any public server</td>
+</tr>
+<tr>
+<td>Taker's payment reorged out after inclusion</td>
+<td>A maker that already delivered is out the fill</td>
+<td>Rare, and not cheaply caused; the maker prices it into its spread. A cover mechanism can socialize it; open question</td>
+</tr>
+</tbody>
+</table>
+<h2>Initial parameters</h2>
+<p>Starting values for v1; all fixed per software version.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Epoch</td>
+<td>1 Bitcoin block</td>
+<td>Bitcoin is the only clock</td>
+</tr>
+<tr>
+<td>Entry payload</td>
+<td>75 bytes, magic <code>BLRD</code>, version 1</td>
+<td>Under the 80-byte OP_RETURN default of older Bitcoin Core versions</td>
+</tr>
+<tr>
+<td>Entry weight</td>
+<td>fee in satoshis</td>
+<td>Pays miners, no burn address</td>
+</tr>
+<tr>
+<td>Leader timeout</td>
+<td>30 s unreachable</td>
+<td>Failover to the next ranked entry</td>
+</tr>
+<tr>
+<td>Claim window</td>
+<td>3 minutes of leader time</td>
+<td>Enough to broadcast a payment; a dead claim costs the maker little</td>
+</tr>
+<tr>
+<td>Deep (bond release)</td>
+<td>per chain, set by its adapter, at or beyond the chain's own finality (3 confirmations on Bitcoin)</td>
+<td>Gates only the bond release; nobody else waits for it</td>
+</tr>
+<tr>
+<td>Taker deadline</td>
+<td>per chain, set by its adapter; counted in Bitcoin blocks from the claim</td>
+<td>Payment in a block by then, or the claim is void</td>
+</tr>
+<tr>
+<td>Maker deadline</td>
+<td>per chain, set by its adapter; counted in Bitcoin blocks from the taker's LegIncluded</td>
+<td>Then the bond goes to the taker</td>
+</tr>
+<tr>
+<td>Grace G</td>
+<td>2 blocks</td>
+<td>One censoring leader cannot cause a default</td>
+</tr>
+<tr>
+<td>Issuance</td>
+<td>Bitcoin subsidy at that height, in BLRD (3.125 now)</td>
+<td>Known curve, no debate</td>
+</tr>
+<tr>
+<td>Match fee</td>
+<td>0.001 BLRD, paid by the maker</td>
+<td>Sequencing has a price; takers pay nothing</td>
+</tr>
+<tr>
+<td>Transfer fee</td>
+<td>0.0001 BLRD</td>
+<td>Spam transfers have a cost</td>
+</tr>
+<tr>
+<td>Dust minimums</td>
+<td>per asset, set by its adapter</td>
+<td>Below the fees to move them</td>
+</tr>
+<tr>
+<td>Base unit</td>
+<td>1 BLRD = 10^8 rill</td>
+<td>Same precision as Bitcoin</td>
+</tr>
+<tr>
+<td>Suggested finality</td>
+<td>1 block for trades, 6 for large BLRD transfers</td>
+<td>Users choose, as on Bitcoin</td>
+</tr>
+</tbody>
+</table>
+  <footer>Source for this page: <a href="https://github.com/masonforest/bollard/blob/main/docs/whitepaper.md">docs/whitepaper.md</a>.</footer>
+</main>
+</body>
+</html>
