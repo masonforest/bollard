@@ -92,26 +92,61 @@ async function loadStatus() {
 async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
-  // Simple mode: a chain select and a token select on each side.
-  fillChain($('s-pay-chain'), 'eth'); fillChain($('s-get-chain'), 'btc');
-  fillAssets('s-pay'); fillAssets('s-get');
-  fillChain($('m-base-chain'), 'btc'); fillChain($('m-quote-chain'), 'eth');
-  fillAssets('m-base'); fillAssets('m-quote');
+  renderTokenButtons();
+  buildPicker();
 }
 
 // ------------------------------------------------------------------ simple mode
 const CHAIN_NAMES = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
-function chains() { return [...new Set(Object.values(assets).map((a) => a.chain))]; }
-function fillChain(sel, def) {
-  const cur = sel.value; sel.innerHTML = '';
-  for (const c of chains()) { const o = document.createElement('option'); o.value = c; o.textContent = CHAIN_NAMES[c] || c; sel.appendChild(o); }
-  sel.value = cur || def;
+const ASSET_NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'USD Coin', 'BLRD': 'Bollard' };
+const coinClass = (a) => 'c-' + (a.symbol.toLowerCase() === 'usdc' || a.symbol.toLowerCase() === 'usdt' ? a.symbol.toLowerCase() : a.chain);
+function coinIcon(a, large = false) {
+  const net = a.chain === 'blrd' ? '' : `<span class="net c-${a.chain}">${a.chain === 'btc' ? '₿' : 'Ξ'}</span>`;
+  return `<span class="coin ${large ? 'lg ' : ''}${coinClass(a)}">${a.symbol[0]}${net}</span>`;
 }
-function fillAssets(prefix) {
-  const chain = $(`${prefix}-chain`).value, sel = $(`${prefix}-asset`); const cur = sel.value;
-  sel.innerHTML = '';
-  for (const a of Object.values(assets).filter((a) => a.chain === chain)) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.symbol; sel.appendChild(o); }
-  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+function renderTokenButtons() {
+  for (const btn of document.querySelectorAll('.token-btn')) {
+    const a = assets[$(btn.dataset.for).value];
+    if (!a) continue;
+    btn.innerHTML = `${coinIcon(a)}<span>${a.symbol}<br><span class="sub">${CHAIN_NAMES[a.chain] || a.chain}</span></span><span class="chev">▾</span>`;
+  }
+}
+// ---- token picker: search, chain chips, popular, full list
+let pickerFor = null, pickerChain = 'all';
+function buildPicker() {
+  const chips = $('p-chains'); chips.innerHTML = '';
+  const allBtn = document.createElement('button'); allBtn.textContent = 'All'; allBtn.dataset.chain = 'all'; chips.appendChild(allBtn);
+  for (const c of [...new Set(Object.values(assets).map((a) => a.chain))]) {
+    const b = document.createElement('button'); b.dataset.chain = c; b.title = CHAIN_NAMES[c] || c;
+    b.innerHTML = `<span class="coin c-${c}" style="width:22px;height:22px;font-size:11px">${(CHAIN_NAMES[c] || c)[0]}</span>`;
+    chips.appendChild(b);
+  }
+  chips.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; pickerChain = b.dataset.chain; renderPicker(); };
+  $('p-search').oninput = renderPicker;
+  $('p-close').onclick = () => $('picker').close();
+  for (const btn of document.querySelectorAll('.token-btn')) btn.onclick = () => openPicker(btn.dataset.for);
+  $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) $('picker').close(); });
+}
+function openPicker(forId) {
+  pickerFor = forId; pickerChain = 'all'; $('p-search').value = '';
+  renderPicker(); $('picker').showModal(); $('p-search').focus();
+}
+function choose(id) {
+  const inp = $(pickerFor); inp.value = id; $('picker').close();
+  renderTokenButtons(); inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function renderPicker() {
+  for (const b of $('p-chains').children) b.classList.toggle('on', b.dataset.chain === pickerChain);
+  const q = $('p-search').value.trim().toLowerCase();
+  const current = pickerFor ? $(pickerFor).value : '';
+  const list = Object.values(assets).filter((a) => (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
+  $('p-popular').replaceChildren(...list.slice(0, 4).map((a) => { const b = document.createElement('button'); b.innerHTML = `${coinIcon(a)}${a.symbol}`; b.onclick = () => choose(a.id); return b; }));
+  $('p-list').replaceChildren(...list.map((a) => {
+    const b = document.createElement('button'); b.className = 'token-row' + (a.id === current ? ' on' : '');
+    b.innerHTML = `${coinIcon(a, true)}<span><div class="name">${ASSET_NAMES[a.id] || a.symbol}</div><div class="sym">${a.symbol}</div></span><span class="right">${CHAIN_NAMES[a.chain] || a.chain}${a.contract ? ' · ' + a.contract.slice(0, 6) + '…' + a.contract.slice(-4) : ''}</span>`;
+    b.onclick = () => choose(a.id); return b;
+  }));
+  if (!list.length) $('p-list').innerHTML = '<div class="picker-label">Nothing matches.</div>';
 }
 function currentMarket() { return `${$('m-base-asset').value}/${$('m-quote-asset').value}`; }
 let quote = null; // { order, qty, payAtoms, getAtoms, payAsset, getAsset, market, side }
@@ -170,13 +205,9 @@ async function computeQuote() {
   go.disabled = false;
 }
 for (const id of ['s-pay-amount', 's-pay-asset', 's-get-asset']) $(id).addEventListener('input', scheduleQuote);
-$('s-pay-chain').addEventListener('input', () => { fillAssets('s-pay'); scheduleQuote(); });
-$('s-get-chain').addEventListener('input', () => { fillAssets('s-get'); scheduleQuote(); });
 $('s-flip').onclick = () => {
-  const pc = $('s-pay-chain').value, pa = $('s-pay-asset').value;
-  $('s-pay-chain').value = $('s-get-chain').value; fillAssets('s-pay'); $('s-pay-asset').value = $('s-get-asset').value;
-  $('s-get-chain').value = pc; fillAssets('s-get'); $('s-get-asset').value = pa;
-  $('s-pay-amount').value = $('s-get-amount').value; scheduleQuote();
+  const pa = $('s-pay-asset').value; $('s-pay-asset').value = $('s-get-asset').value; $('s-get-asset').value = pa;
+  $('s-pay-amount').value = $('s-get-amount').value; renderTokenButtons(); scheduleQuote();
 };
 
 const SWAP = 'bollard.swap';
@@ -401,10 +432,7 @@ function logLine(ev) {
   const log = $('log'); log.prepend(li); while (log.children.length > 60) log.lastChild.remove();
 }
 async function loadPro() { await Promise.all([loadStatus(), loadBook(), loadChart(), loadMine(), loadMatches(), renderAccount()]); }
-for (const [chain, asset] of [['m-base-chain', 'm-base'], ['m-quote-chain', 'm-quote']]) {
-  $(chain).addEventListener('input', () => { fillAssets(asset); loadBook(); loadChart(); });
-  $(asset + '-asset').addEventListener('input', () => { loadBook(); loadChart(); });
-}
+for (const id of ['m-base-asset', 'm-quote-asset']) $(id).addEventListener('input', () => { loadBook(); loadChart(); });
 
 // ------------------------------------------------------------------ boot
 (async () => {

@@ -66,3 +66,34 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 #log li:last-child { border-bottom: 0; }
 @media (max-width: 760px) { .grid2, .book { grid-template-columns: 1fr; } .chart { height: 240px; } }
 .market-row select { font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+
+/* token picker */
+.token-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 15px; font-weight: 600; padding: 6px 10px 6px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; white-space: nowrap; }
+.token-btn:hover { border-color: var(--accent); }
+.token-btn .chev { color: var(--muted); font-size: 12px; margin-left: 2px; }
+.token-btn .sub { color: var(--muted); font-weight: 400; font-size: 12px; }
+.coin { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; flex: none; position: relative; }
+.coin.lg { width: 40px; height: 40px; font-size: 17px; }
+.coin .net { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--bg); font-size: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.coin.lg .net { width: 18px; height: 18px; font-size: 10px; }
+.c-btc { background: #f7931a; } .c-eth { background: #627eea; } .c-blrd { background: #1f5fbf; } .c-usdc { background: #2775ca; } .c-usdt { background: #26a17b; }
+.picker { width: min(560px, calc(100% - 24px)); max-height: 85vh; padding: 0; border-radius: 22px; overflow: hidden; flex-direction: column; }
+.picker[open] { display: flex; }
+.picker-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.picker-search-icon { font-size: 22px; color: var(--muted); }
+#p-search { flex: 1; border: 0; background: none; font: inherit; font-size: 18px; color: var(--fg); outline: none; }
+.picker-x { border: 0; background: none; color: var(--fg); font-size: 26px; line-height: 1; cursor: pointer; }
+.chips { display: flex; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 15px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+.chips button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.picker-body { overflow-y: auto; padding: 8px 8px 16px; }
+.picker-label { color: var(--muted); font-size: 14px; padding: 12px 12px 6px; }
+.pop-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 12px; }
+.pop-row button { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 15px; font-weight: 600; padding: 6px 14px 6px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+.token-list { display: flex; flex-direction: column; }
+.token-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 12px; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.token-row:hover, .token-row.on { background: var(--card); }
+.token-row .name { font-size: 16px; }
+.token-row .sym { color: var(--muted); font-size: 14px; }
+.token-row .right { margin-left: auto; color: var(--muted); font-size: 13px; }
+.box-row .token-btn { flex: none; }
