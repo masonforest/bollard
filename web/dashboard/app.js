@@ -1,7 +1,8 @@
 import { TxType, hex, randomSecret, pubkeyOf, isSecret, send } from './wire.js';
 
 // ------------------------------------------------------------------ setup
-const API = (location.port || location.hostname.startsWith('mainnet.') || location.hostname === 'localhost') ? '' : 'https://mainnet.' + location.hostname;
+const BASE_DOMAIN = location.hostname.replace(/^(app|www)\./, '');
+const API = (location.port || location.hostname.startsWith('mainnet.') || location.hostname === 'localhost') ? '' : 'https://mainnet.' + BASE_DOMAIN;
 let api = API;
 const $ = (id) => document.getElementById(id);
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');

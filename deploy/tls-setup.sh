@@ -8,7 +8,8 @@ NAMES=""; for n in "$@"; do NAMES="$NAMES -d $n"; done
 certbot certonly --nginx --non-interactive --agree-tos -m "$EMAIL" --keep-until-expiring --expand $NAMES
 
 tls_block() { # name cert-dir upstream-port-or-webroot
-if [ "${3#/}" != "$3" ]; then body="root $3; index index.html; location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }"; else body="location / { proxy_pass http://127.0.0.1:$3; }"; fi
+if [ "$3" = "app" ]; then body="root /var/www/bollard.exchange; location = / { try_files /dashboard/index.html =404; } location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }";
+elif [ "${3#/}" != "$3" ]; then body="root $3; index index.html; location = /dashboard { return 301 https://app.bollard.exchange/; } location = /dashboard/ { return 301 https://app.bollard.exchange/; } location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }"; else body="location / { proxy_pass http://127.0.0.1:$3; }"; fi
 cat <<TLS
 server {
     listen 443 ssl;
@@ -25,7 +26,8 @@ TLS
 : > /etc/nginx/http.d/tls.conf
 [ -d /etc/letsencrypt/live/bitcoin.dance ] && { tls_block "bitcoin.dance www.bitcoin.dance" bitcoin.dance 3000; tls_block sepolia.bitcoin.dance bitcoin.dance 3100; } >> /etc/nginx/http.d/tls.conf
 [ -d /etc/letsencrypt/live/bollard.exchange ] && tls_block "bollard.exchange www.bollard.exchange" bollard.exchange /var/www/bollard.exchange >> /etc/nginx/http.d/tls.conf
-grep -q mainnet.bollard.exchange /etc/letsencrypt/live/bollard.exchange/fullchain.pem 2>/dev/null; openssl x509 -in /etc/letsencrypt/live/bollard.exchange/fullchain.pem -noout -ext subjectAltName 2>/dev/null | grep -q mainnet.bollard.exchange && tls_block mainnet.bollard.exchange bollard.exchange 8080 >> /etc/nginx/http.d/tls.conf
+openssl x509 -in /etc/letsencrypt/live/bollard.exchange/fullchain.pem -noout -ext subjectAltName 2>/dev/null | grep -q app.bollard.exchange && tls_block app.bollard.exchange bollard.exchange app >> /etc/nginx/http.d/tls.conf
+openssl x509 -in /etc/letsencrypt/live/bollard.exchange/fullchain.pem -noout -ext subjectAltName 2>/dev/null | grep -q mainnet.bollard.exchange && tls_block mainnet.bollard.exchange bollard.exchange 8080 >> /etc/nginx/http.d/tls.conf
 
 # HTTP -> HTTPS for names that have certificates. ACME challenges still pass:
 # certbot's nginx plugin inserts its own location ahead of the redirect.

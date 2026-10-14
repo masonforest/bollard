@@ -17,7 +17,7 @@ html = f"""<!doctype html>
 <main>
   <nav>
     <a href="/">Bollard</a>
-    <a href="/dashboard/">Dashboard</a>
+    <a href="https://app.bollard.exchange/">App</a>
     <a href="/whitepaper/" class="here">White paper</a>
     <a href="https://github.com/masonforest/bollard">Source</a>
     <a href="https://mainnet.bollard.exchange/status">API</a>
