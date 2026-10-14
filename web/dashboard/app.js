@@ -92,12 +92,9 @@ async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
   const ids = marketsInfo.assets.map((a) => a.id);
-  for (const sel of [$('s-pay-asset'), $('s-get-asset')]) {
-    const cur = sel.value; sel.innerHTML = '';
-    for (const id of ids) { const o = document.createElement('option'); o.value = id; o.textContent = assets[id].symbol + (id === 'BLRD' ? '' : ' · ' + id.split(':')[0]); sel.appendChild(o); }
-    if (cur) sel.value = cur;
-  }
-  if (!$('s-pay-asset').value || $('s-pay-asset').value === $('s-get-asset').value) { $('s-pay-asset').value = 'eth:ETH'; $('s-get-asset').value = 'btc:BTC'; }
+  // Simple mode: a chain select and a token select on each side.
+  fillChain($('s-pay-chain'), 'eth'); fillChain($('s-get-chain'), 'btc');
+  fillAssets('pay'); fillAssets('get');
   const sel = $('market'); const current = sel.value;
   const all = new Set(marketsInfo.active.map((x) => x.market));
   for (const b of ids) for (const q of ids) if (b !== q && q !== 'BLRD') all.add(b + '/' + q);
@@ -107,6 +104,19 @@ async function loadMarkets() {
 }
 
 // ------------------------------------------------------------------ simple mode
+const CHAIN_NAMES = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
+function chains() { return [...new Set(Object.values(assets).map((a) => a.chain))]; }
+function fillChain(sel, def) {
+  const cur = sel.value; sel.innerHTML = '';
+  for (const c of chains()) { const o = document.createElement('option'); o.value = c; o.textContent = CHAIN_NAMES[c] || c; sel.appendChild(o); }
+  sel.value = cur || def;
+}
+function fillAssets(side) {
+  const chain = $(`s-${side}-chain`).value, sel = $(`s-${side}-asset`); const cur = sel.value;
+  sel.innerHTML = '';
+  for (const a of Object.values(assets).filter((a) => a.chain === chain)) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.symbol; sel.appendChild(o); }
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
 let quote = null; // { order, qty, payAtoms, getAtoms, payAsset, getAsset, market, side }
 
 async function bestQuote(payAsset, getAsset, payAtoms) {
@@ -163,7 +173,14 @@ async function computeQuote() {
   go.disabled = false;
 }
 for (const id of ['s-pay-amount', 's-pay-asset', 's-get-asset']) $(id).addEventListener('input', scheduleQuote);
-$('s-flip').onclick = () => { const a = $('s-pay-asset').value; $('s-pay-asset').value = $('s-get-asset').value; $('s-get-asset').value = a; $('s-pay-amount').value = $('s-get-amount').value; scheduleQuote(); };
+$('s-pay-chain').addEventListener('input', () => { fillAssets('pay'); scheduleQuote(); });
+$('s-get-chain').addEventListener('input', () => { fillAssets('get'); scheduleQuote(); });
+$('s-flip').onclick = () => {
+  const pc = $('s-pay-chain').value, pa = $('s-pay-asset').value;
+  $('s-pay-chain').value = $('s-get-chain').value; fillAssets('pay'); $('s-pay-asset').value = $('s-get-asset').value;
+  $('s-get-chain').value = pc; fillAssets('get'); $('s-get-asset').value = pa;
+  $('s-pay-amount').value = $('s-get-amount').value; scheduleQuote();
+};
 
 const SWAP = 'bollard.swap';
 let swap = null;
