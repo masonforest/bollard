@@ -20,7 +20,7 @@ use tower_http::cors::CorsLayer;
 type S = State<Arc<Node>>;
 
 pub fn router(node: Arc<Node>) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(index))
         .route("/status", get(status))
         .route("/markets", get(markets))
@@ -28,6 +28,7 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/account/{pubkey}", get(account))
         .route("/orders", get(orders))
         .route("/matches", get(matches))
+        .route("/trades", get(trades))
         .route("/log", get(log_stream))
         .route("/log/range", get(log_range))
         .route("/log/seq/{seq}", get(log_by_seq))
@@ -35,9 +36,12 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/entries", get(entries))
         .route("/epochs", get(epochs))
         .route("/events", get(events_stream))
-        .route("/tx", post(submit_tx))
-        .layer(CorsLayer::permissive())
-        .with_state(node)
+        .route("/tx", post(submit_tx));
+    let router = match node.cfg.web_dir.clone() {
+        Some(dir) => router.fallback_service(tower_http::services::ServeDir::new(dir)),
+        None => router,
+    };
+    router.layer(CorsLayer::permissive()).with_state(node)
 }
 
 struct ApiError(anyhow::Error);
@@ -151,6 +155,24 @@ async fn matches(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
     .fetch_all(&n.db)
     .await?;
     Ok(Json(json!(rows)))
+}
+
+/// Trades for a chart: every claim on a market, oldest first, with its price in
+/// quote atoms per 1e8 base atoms and the leader time it was claimed at.
+async fn trades(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
+    let Some(market) = q.market else { return Err(anyhow::anyhow!("market is required").into()) };
+    let rows: Vec<(Vec<u8>, i64, i64, i64, i16, String)> = sqlx::query_as(
+        "select id, price, quantity, claimed_ts, side, status from matches where market = $1 order by seq desc limit $2",
+    )
+    .bind(&market)
+    .bind(q.limit.unwrap_or(2000).clamp(1, 10000))
+    .fetch_all(&n.db)
+    .await?;
+    Ok(Json(json!(rows
+        .iter()
+        .rev()
+        .map(|(id, price, qty, ts, side, status)| json!({"match": hex::encode(id), "price": price, "quantity": qty, "time": ts, "side": side, "status": status}))
+        .collect::<Vec<_>>())))
 }
 
 fn entry_json(bytes: &[u8]) -> Value {

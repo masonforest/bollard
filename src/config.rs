@@ -38,4 +38,7 @@ pub struct RunArgs {
     /// Seconds between settlement checks when leading
     #[arg(long, env = "SETTLE_SECS", default_value_t = 15)]
     pub settle_secs: u64,
+    /// Serve this directory of static files (the web/ folder) alongside the API
+    #[arg(long, env = "WEB_DIR")]
+    pub web_dir: Option<String>,
 }
