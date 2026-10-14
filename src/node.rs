@@ -375,15 +375,16 @@ impl Node {
     /// no lottery (the leader carries over and still earns the block's reward),
     /// and catch up any blocks that passed while this node was away.
     async fn start_epoch(&self, info: &EpochInfo) -> Result<()> {
-        let last: Option<(i32,)> = sqlx::query_as("select height from log where kind = 'EpochStart' order by seq desc limit 1").fetch_optional(&self.db).await?;
-        let from = last.map(|(h,)| h as u32 + 1).unwrap_or(info.height);
-        for h in from..=info.height {
-            let row: Option<(Vec<u8>, Option<String>)> = sqlx::query_as("select leader_key_hash, entry_txid from epochs where height = $1").bind(h as i32).fetch_optional(&self.db).await?;
-            let Some((kh, txid)) = row else { continue };
-            if kh != self.my_key_hash().to_vec() {
-                continue;
-            }
-            self.append_at(h, Body::EpochStart { height: h, entry_txid: txid.unwrap_or_default() }).await?;
+        // Every block up to the current one that this node led and has not minted yet.
+        let missing: Vec<(i32, Option<String>)> = sqlx::query_as(
+            "select height, entry_txid from epochs where leader_key_hash = $1 and height <= $2 and height not in (select height from log where kind = 'EpochStart') order by height",
+        )
+        .bind(self.my_key_hash().to_vec())
+        .bind(info.height as i32)
+        .fetch_all(&self.db)
+        .await?;
+        for (h, txid) in missing {
+            self.append_at(h as u32, Body::EpochStart { height: h as u32, entry_txid: txid.unwrap_or_default() }).await?;
         }
         Ok(())
     }
