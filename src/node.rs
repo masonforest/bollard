@@ -123,13 +123,18 @@ impl Node {
         }
     }
 
-    /// Leader only: sequence a new entry.
+    /// Leader only: sequence a new entry at the current height.
     pub async fn append(&self, body: Body) -> Result<ParsedEntry> {
+        self.append_at(self.height(), body).await
+    }
+
+    /// Leader only: sequence a new entry stamped with `height` (used to catch
+    /// up block rewards for blocks that passed while the node was away).
+    pub async fn append_at(&self, height: u32, body: Body) -> Result<ParsedEntry> {
         let mut head = self.head.lock().await;
         if self.role().await != Role::Leader {
             bail!("not the leader");
         }
-        let height = self.height();
         let time = now_ms().max(head.time);
         let content = fbio::build_entry_content(head.seq + 1, &head.hash, height, time, &self.kp.pubkey(), &body);
         let bytes = fbio::sign_entry(&content, &self.kp);
@@ -366,16 +371,20 @@ impl Node {
         }
     }
 
-    /// Append EpochStart for a block we won, once.
+    /// Append one EpochStart per Bitcoin block we lead, including blocks with
+    /// no lottery (the leader carries over and still earns the block's reward),
+    /// and catch up any blocks that passed while this node was away.
     async fn start_epoch(&self, info: &EpochInfo) -> Result<()> {
         let last: Option<(i32,)> = sqlx::query_as("select height from log where kind = 'EpochStart' order by seq desc limit 1").fetch_optional(&self.db).await?;
-        if last.map(|(h,)| h as u32) >= Some(info.height) {
-            return Ok(());
+        let from = last.map(|(h,)| h as u32 + 1).unwrap_or(info.height);
+        for h in from..=info.height {
+            let row: Option<(Vec<u8>, Option<String>)> = sqlx::query_as("select leader_key_hash, entry_txid from epochs where height = $1").bind(h as i32).fetch_optional(&self.db).await?;
+            let Some((kh, txid)) = row else { continue };
+            if kh != self.my_key_hash().to_vec() {
+                continue;
+            }
+            self.append_at(h, Body::EpochStart { height: h, entry_txid: txid.unwrap_or_default() }).await?;
         }
-        if info.entry_txid.is_none() && info.height != self.cfg.genesis_height {
-            return Ok(()); // same leader carried over; no new epoch, no reward
-        }
-        self.append(Body::EpochStart { height: info.height, entry_txid: info.entry_txid.clone().unwrap_or_default() }).await?;
         Ok(())
     }
 

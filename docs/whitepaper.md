@@ -56,7 +56,7 @@ Consequence: non-miners only ever win blocks whose miner did not enter, with pro
 2. seed = SHA256d(block hash of N, then the string `bollard/v1`).
 3. Rank the entries by drawing them one at a time, each draw weighted by fee, with no entry drawn twice. Draw number i (starting at 0) goes like this: compute r = SHA256(seed, i) modulo the total fee of the entries not yet drawn. Then go through the undrawn entries in txid order, adding up their fees as you go; the first entry at which the running total exceeds r is drawn and takes rank i. Repeat until no entries are left. An entry's chance of being drawn first is its fee divided by the block's total entry fees, and every node gets the same ranking because the seed, the fees and the txid order all come from the block.
 4. Leader for block N = the first entry in rank order whose tip commitment is valid: the committed entry exists and descends from the checkpoint of block N−1.
-5. If block N has no entries, or none that are valid, nothing changes: the leader of block N−1 keeps leading through block N, the checkpoint stays where it was, and no reward is minted for block N. After genesis there is always exactly one leader; a block without a lottery is just a block the leader keeps working through. If the leader fails during such a stretch, failover uses the rank order from the most recent block that had entries, then earlier leaders.
+5. If block N has no entries, or none that are valid, the leader stays the same: the leader of block N−1 keeps leading through block N and mints block N's reward as well, and the checkpoint stays where it was. After genesis there is always exactly one leader; a block without a lottery is just a block the leader keeps working through. If the leader fails during such a stretch, failover uses the rank order from the most recent block that had entries, then earlier leaders.
 
 Every node computes the same ranking from Bitcoin data alone. The ranking also gives the fallback order if the winner is unreachable.
 
@@ -222,7 +222,7 @@ BLRD has three jobs: back trades (bonds), pay for sequencing (fees to the leader
 
 ### Issuance
 
-Proposal: each block's leader mints R = Bitcoin's block subsidy at that height, denominated in BLRD. That is 3.125 BLRD per block today, halving when Bitcoin halves, reaching zero around 2140. The curve is already understood by everyone, so nobody has to argue about it. It is minted in EpochStart; a block with no valid entry mints nothing.
+Proposal: each block's leader mints R = Bitcoin's block subsidy at that height, denominated in BLRD. That is 3.125 BLRD per block today, halving when Bitcoin halves, reaching zero around 2140. The curve is already understood by everyone, so nobody has to argue about it. It is minted in an EpochStart entry, one per Bitcoin block, whether or not that block had a lottery: a leader who carries over through quiet blocks earns their rewards too.
 
 Alternatives: a flat 1 BLRD per block (no halvings to explain), or no issuance at all with a genesis allocation (less boring, more arguing).
 
