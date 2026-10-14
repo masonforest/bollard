@@ -92,14 +92,11 @@ async function loadStatus() {
 async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
-  const ids = marketsInfo.assets.map((a) => a.id);
   // Simple mode: a chain select and a token select on each side.
   fillChain($('s-pay-chain'), 'eth'); fillChain($('s-get-chain'), 'btc');
   fillAssets('s-pay'); fillAssets('s-get');
   fillChain($('m-base-chain'), 'btc'); fillChain($('m-quote-chain'), 'eth');
   fillAssets('m-base'); fillAssets('m-quote');
-}
-  sel.value = current || (marketsInfo.active[0] ? marketsInfo.active[0].market : 'btc:BTC/eth:ETH');
 }
 
 // ------------------------------------------------------------------ simple mode
