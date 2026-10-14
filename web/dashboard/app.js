@@ -95,12 +95,10 @@ async function loadMarkets() {
   const ids = marketsInfo.assets.map((a) => a.id);
   // Simple mode: a chain select and a token select on each side.
   fillChain($('s-pay-chain'), 'eth'); fillChain($('s-get-chain'), 'btc');
-  fillAssets('pay'); fillAssets('get');
-  const sel = $('market'); const current = sel.value;
-  const all = new Set(marketsInfo.active.map((x) => x.market));
-  for (const b of ids) for (const q of ids) if (b !== q && q !== 'BLRD') all.add(b + '/' + q);
-  sel.innerHTML = '';
-  for (const mk of [...all].sort()) { const o = document.createElement('option'); o.value = o.textContent = mk; sel.appendChild(o); }
+  fillAssets('s-pay'); fillAssets('s-get');
+  fillChain($('m-base-chain'), 'btc'); fillChain($('m-quote-chain'), 'eth');
+  fillAssets('m-base'); fillAssets('m-quote');
+}
   sel.value = current || (marketsInfo.active[0] ? marketsInfo.active[0].market : 'btc:BTC/eth:ETH');
 }
 
@@ -112,12 +110,13 @@ function fillChain(sel, def) {
   for (const c of chains()) { const o = document.createElement('option'); o.value = c; o.textContent = CHAIN_NAMES[c] || c; sel.appendChild(o); }
   sel.value = cur || def;
 }
-function fillAssets(side) {
-  const chain = $(`s-${side}-chain`).value, sel = $(`s-${side}-asset`); const cur = sel.value;
+function fillAssets(prefix) {
+  const chain = $(`${prefix}-chain`).value, sel = $(`${prefix}-asset`); const cur = sel.value;
   sel.innerHTML = '';
   for (const a of Object.values(assets).filter((a) => a.chain === chain)) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.symbol; sel.appendChild(o); }
   if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
 }
+function currentMarket() { return `${$('m-base-asset').value}/${$('m-quote-asset').value}`; }
 let quote = null; // { order, qty, payAtoms, getAtoms, payAsset, getAsset, market, side }
 
 async function bestQuote(payAsset, getAsset, payAtoms) {
@@ -174,12 +173,12 @@ async function computeQuote() {
   go.disabled = false;
 }
 for (const id of ['s-pay-amount', 's-pay-asset', 's-get-asset']) $(id).addEventListener('input', scheduleQuote);
-$('s-pay-chain').addEventListener('input', () => { fillAssets('pay'); scheduleQuote(); });
-$('s-get-chain').addEventListener('input', () => { fillAssets('get'); scheduleQuote(); });
+$('s-pay-chain').addEventListener('input', () => { fillAssets('s-pay'); scheduleQuote(); });
+$('s-get-chain').addEventListener('input', () => { fillAssets('s-get'); scheduleQuote(); });
 $('s-flip').onclick = () => {
   const pc = $('s-pay-chain').value, pa = $('s-pay-asset').value;
-  $('s-pay-chain').value = $('s-get-chain').value; fillAssets('pay'); $('s-pay-asset').value = $('s-get-asset').value;
-  $('s-get-chain').value = pc; fillAssets('get'); $('s-get-asset').value = pa;
+  $('s-pay-chain').value = $('s-get-chain').value; fillAssets('s-pay'); $('s-pay-asset').value = $('s-get-asset').value;
+  $('s-get-chain').value = pc; fillAssets('s-get'); $('s-get-asset').value = pa;
   $('s-pay-amount').value = $('s-get-amount').value; scheduleQuote();
 };
 
@@ -282,7 +281,7 @@ function ensureChart() {
 function fitChart() { if (chart) chart.timeScale().fitContent(); }
 async function loadChart() {
   ensureChart(); if (!chart) return;
-  const market = $('market').value; if (!market) return;
+  const market = currentMarket(); if (!market || marketProblem()) return;
   const [base, q] = market.split('/');
   const trades = await j(`/trades?market=${encodeURIComponent(market)}`).catch(() => []);
   const bucket = 15 * 60; const byT = new Map();
@@ -307,8 +306,15 @@ function orderRow(o, cls) {
   tr.innerHTML = `<td class="mono ${cls}">${short(o.id)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${fromAtoms(o.bond_left || o.qty_left, 'BLRD')}</td><td>${policy[o.fill_policy]}</td>`;
   return tr;
 }
+function marketProblem() {
+  const [b, q] = currentMarket().split('/');
+  if (b === q) return 'base and quote must differ';
+  if (q === 'BLRD') return 'BLRD trades as the base asset (sell BLRD for the other side)';
+  return '';
+}
 async function loadBook() {
-  const market = $('market').value; if (!market) return;
+  const market = currentMarket(); if (!market) return;
+  const problem = marketProblem(); if (problem) { $('market-note').textContent = problem; $('bids').innerHTML = $('asks').innerHTML = ''; return; }
   const [base, q] = market.split('/');
   $('market-note').textContent = `price in ${assets[q]?.symbol} per ${assets[base]?.symbol}`;
   $('o-qty-unit').textContent = assets[base]?.symbol || ''; $('o-price-unit').textContent = `${assets[q]?.symbol}/${assets[base]?.symbol}`;
@@ -320,7 +326,7 @@ async function loadBook() {
   if (!b.bids.length && !b.asks.length) { const tr = document.createElement('tr'); tr.innerHTML = '<td colspan="5" class="muted">no resting orders</td>'; $('bids').appendChild(tr); }
 }
 function updateRecvHint() {
-  const [base, q] = ($('market').value || '/').split('/');
+  const [base, q] = (currentMarket() || '/').split('/');
   const buying = $('o-side').value === '1' ? q : base; // sell base -> you receive quote
   $('o-recv-chain').textContent = buying ? `(${assets[buying]?.symbol} on ${assets[buying]?.chain})` : '';
   const bondRow = $('o-bond').parentElement; bondRow.style.opacity = base === 'BLRD' && $('o-side').value === '1' ? .4 : 1;
@@ -329,7 +335,7 @@ $('o-side').onchange = updateRecvHint;
 $('order-form').onsubmit = async (ev) => {
   ev.preventDefault(); $('o-error').textContent = '';
   try {
-    const market = $('market').value; const [base, q] = market.split('/');
+    const market = currentMarket(); const [base, q] = market.split('/');
     const body = {
       market, side: Number($('o-side').value),
       quantity: toAtoms($('o-qty').value, base),
@@ -347,7 +353,7 @@ $('order-form').onsubmit = async (ev) => {
   } catch (e) { $('o-error').textContent = e.message; }
 };
 for (const id of ['o-qty', 'o-price']) $(id).addEventListener('input', () => {
-  try { const [base, q] = $('market').value.split('/'); const qa = quoteAmount(toAtoms($('o-qty').value, base), priceFromHuman($('o-price').value, base, q)); $('o-total').textContent = `= ${fromAtoms(qa, q)}`; } catch { $('o-total').textContent = ''; }
+  try { const [base, q] = currentMarket().split('/'); const qa = quoteAmount(toAtoms($('o-qty').value, base), priceFromHuman($('o-price').value, base, q)); $('o-total').textContent = `= ${fromAtoms(qa, q)}`; } catch { $('o-total').textContent = ''; }
 });
 
 function legText(txid, included) { return txid ? `<span class="mono">${short(txid, 12)}</span> ${included ? 'in block' : 'reported'}` : '<span class="muted">waiting</span>'; }
@@ -387,14 +393,6 @@ async function loadMatches() {
   }));
   if (!ms.length) $('matches').innerHTML = '<tr><td colspan="7" class="muted">none</td></tr>';
 }
-async function loadEpochs() {
-  const es = await j('/epochs');
-  $('epochs').replaceChildren(...es.slice(0, 20).map((e) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${e.height.toLocaleString()}</td><td class="mono">${e.entry_txid ? `<a href="https://mempool.space/tx/${e.entry_txid}">${short(e.entry_txid, 12)}</a>` : 'genesis'}</td><td class="mono">${short(e.leader_key_hash, 12)}</td><td class="mono">${e.leader_url || ''}</td><td class="mono">${short(e.checkpoint_tip, 12)}</td>`;
-    return tr;
-  }));
-}
 function logLine(ev) {
   const li = document.createElement('li'); const t = new Date().toLocaleTimeString(); let text = ev.event;
   if (ev.event === 'Entry') text = `#${ev.seq} ${ev.kind}`;
@@ -405,8 +403,11 @@ function logLine(ev) {
   li.innerHTML = `<span class="muted mono">${t}</span> &nbsp; ${text}`;
   const log = $('log'); log.prepend(li); while (log.children.length > 60) log.lastChild.remove();
 }
-async function loadPro() { await Promise.all([loadStatus(), loadBook(), loadChart(), loadMine(), loadMatches(), loadEpochs(), renderAccount()]); }
-$('market').addEventListener('change', () => { loadBook(); loadChart(); });
+async function loadPro() { await Promise.all([loadStatus(), loadBook(), loadChart(), loadMine(), loadMatches(), renderAccount()]); }
+for (const [chain, asset] of [['m-base-chain', 'm-base'], ['m-quote-chain', 'm-quote']]) {
+  $(chain).addEventListener('input', () => { fillAssets(asset); loadBook(); loadChart(); });
+  $(asset + '-asset').addEventListener('input', () => { loadBook(); loadChart(); });
+}
 
 // ------------------------------------------------------------------ boot
 (async () => {

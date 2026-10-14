@@ -102,8 +102,11 @@
       <div class="card"><div class="k">Your BLRD</div><div class="v" id="my-blrd">–</div></div>
     </div>
 
-    <div class="row" style="margin-top:22px">
-      <select id="market"></select>
+    <div class="row market-row" style="margin-top:22px">
+      <span class="muted">Base</span>
+      <select id="m-base-chain" title="Chain"></select><select id="m-base-asset" title="Token"></select>
+      <span class="muted">/ Quote</span>
+      <select id="m-quote-chain" title="Chain"></select><select id="m-quote-asset" title="Token"></select>
       <span class="muted" id="market-note"></span>
       <span class="muted" id="last-price"></span>
     </div>
@@ -147,8 +150,6 @@
     <h2>Live</h2>
     <ul id="log"></ul>
 
-    <h2>Lottery</h2>
-    <table><thead><tr><th>Height</th><th>Entry</th><th>Leader</th><th>Where</th><th>Checkpoint</th></tr></thead><tbody id="epochs"></tbody></table>
   </section>
 
   <!-- ---------------------------------------------------------- account -->

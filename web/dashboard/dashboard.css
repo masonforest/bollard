@@ -65,3 +65,4 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 #log li { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
 #log li:last-child { border-bottom: 0; }
 @media (max-width: 760px) { .grid2, .book { grid-template-columns: 1fr; } .chart { height: 240px; } }
+.market-row select { font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
