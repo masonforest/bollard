@@ -41,4 +41,7 @@ pub struct RunArgs {
     /// Serve this directory of static files (the web/ folder) alongside the API
     #[arg(long, env = "WEB_DIR")]
     pub web_dir: Option<String>,
+    /// Esplora-style API used to find Bitcoin payments to an address
+    #[arg(long, env = "ESPLORA_API", default_value = "https://mempool.space/api")]
+    pub esplora: String,
 }

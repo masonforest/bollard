@@ -6,13 +6,37 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct BtcRpc {
     url: String,
+    esplora: String,
     http: reqwest::Client,
 }
 
 impl BtcRpc {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, esplora: &str) -> Self {
         let http = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().expect("http client");
-        Self { url: url.to_string(), http }
+        Self { url: url.to_string(), esplora: esplora.trim_end_matches('/').to_string(), http }
+    }
+
+    /// The newest transaction (mempool included) paying at least `amount` sats to `to`
+    /// since `since_ms`, via the Esplora API.
+    pub async fn find_payment(&self, to: &str, amount: u64, since_ms: u64) -> Result<Option<String>> {
+        let txs: Vec<Value> = self.http.get(format!("{}/address/{to}/txs", self.esplora)).send().await?.error_for_status()?.json().await?;
+        let since = since_ms / 1000;
+        for tx in txs {
+            let confirmed = tx.pointer("/status/confirmed").and_then(|c| c.as_bool()).unwrap_or(false);
+            let block_time = tx.pointer("/status/block_time").and_then(|t| t.as_u64()).unwrap_or(0);
+            if confirmed && block_time + 1800 < since {
+                continue; // mined well before the claim
+            }
+            let paid: u64 = tx
+                .get("vout")
+                .and_then(|v| v.as_array())
+                .map(|outs| outs.iter().filter(|o| o.get("scriptpubkey_address").and_then(|a| a.as_str()) == Some(to)).map(|o| o.get("value").and_then(|v| v.as_u64()).unwrap_or(0)).sum())
+                .unwrap_or(0);
+            if paid >= amount {
+                return Ok(tx.get("txid").and_then(|t| t.as_str()).map(|t| t.to_string()));
+            }
+        }
+        Ok(None)
     }
 
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
@@ -105,5 +129,21 @@ impl BtcRpc {
         }
         let c = tx.get("confirmations").and_then(|c| c.as_i64()).unwrap_or(0);
         Ok(c >= depth as i64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Network test: the node's own address received 11,978 sats once.
+    #[tokio::test]
+    #[ignore]
+    async fn finds_a_known_payment() {
+        let rpc = BtcRpc::new("https://bitcoin.publicnode.com", "https://mempool.space/api");
+        let found = rpc.find_payment("bc1quud6049g028awqeq73tm3htsdzggdjdum4cwvw", 10_000, 0).await.unwrap();
+        assert!(found.is_some(), "expected the funding transaction");
+        let none = rpc.find_payment("bc1quud6049g028awqeq73tm3htsdzggdjdum4cwvw", 10_000_000, 0).await.unwrap();
+        assert!(none.is_none(), "nobody paid 0.1 BTC");
     }
 }

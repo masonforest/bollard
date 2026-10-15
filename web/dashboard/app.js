@@ -230,6 +230,8 @@ $('s-go').onclick = async () => {
 };
 
 function showSwap() {
+  // One thing at a time: while a swap is in flight the swap card gives way to the payment panel.
+  $('s-card').classList.toggle('hidden', !!swap);
   if (!swap) { $('s-swap').classList.add('hidden'); return; }
   $('s-swap').classList.remove('hidden');
   $('s-pay-exact').textContent = fromAtoms(swap.payAtoms, swap.payAsset);
@@ -240,12 +242,35 @@ function showSwap() {
     const uri = assets[swap.payAsset]?.chain === 'btc' ? `bitcoin:${swap.payTo}?amount=${fromAtoms(swap.payAtoms, swap.payAsset, false)}` : swap.payTo;
     const qr = qrcode(0, 'M'); qr.addData(uri); qr.make(); $('s-qr').innerHTML = qr.createSvgTag({ cellSize: 3, margin: 2 });
   } catch { $('s-qr').innerHTML = ''; }
-  $('s-txid').parentElement.parentElement.classList.toggle('hidden', swap.reported);
-  $('s-report').classList.toggle('hidden', swap.reported);
+  $('s-manual').classList.toggle('hidden', swap.reported);
   $('s-done').classList.toggle('hidden', !swap.reported);
+  $('s-watch').classList.toggle('hidden', swap.reported);
   trackSwap();
+  watchPayment();
 }
-$('s-copy').onclick = () => navigator.clipboard.writeText(swap?.payTo || '');
+
+let watching = false;
+async function watchPayment() {
+  if (watching) return; watching = true;
+  try {
+    while (swap && !swap.reported) {
+      try {
+        const r = await j(`/find-payment?match=${swap.match}&leg=0`);
+        if (r.txid) {
+          $('s-watch').textContent = `Payment seen: ${short(r.txid, 14)}. Reporting it…`;
+          if (!r.reported) await send(api, ensureKey(), TxType.ReportPayment, { match_id: hex.dec(swap.match), leg: 0, txid: r.txid });
+          swap.reported = true; swap.txid = r.txid; try { localStorage.setItem(SWAP, JSON.stringify(swap)); } catch {}
+          showSwap(); break;
+        }
+      } catch (e) { $('s-watch').textContent = 'Watching for your payment… (' + e.message + ')'; }
+      await new Promise((r) => setTimeout(r, 8000));
+    }
+  } finally { watching = false; }
+}
+$('s-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(swap?.payTo || ''); } catch {}
+  const b = $('s-copy'); b.textContent = 'Copied'; b.classList.add('ok'); setTimeout(() => { b.textContent = 'Copy address'; b.classList.remove('ok'); }, 1500);
+};
 $('s-report').onclick = async () => {
   const txid = $('s-txid').value.trim();
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txid)) { $('s-status').textContent = 'That does not look like a transaction id.'; return; }
@@ -262,10 +287,10 @@ function matchStatusText(m, role) {
   if (m.status === 'void') return 'Void: ' + (m.closed_reason || '');
   if (m.status === 'missed') return role === 'taker' ? 'The maker did not deliver; their bond was paid to you.' : 'You did not deliver; your bond went to the taker.';
   if (m.status === 'closed') return m.closed_reason === 'settled on the ledger' ? 'Done: BLRD credited to your account.' : 'Done: both payments delivered.';
-  if (!m.taker_txid) return 'Waiting for the taker to pay and report the txid.';
-  if (!m.taker_included_height) return 'Taker payment reported; waiting for it to land in a block.';
+  if (!m.taker_txid) return role === 'taker' ? 'Waiting for your payment.' : 'Waiting for the taker to pay.';
+  if (!m.taker_included_height) return role === 'taker' ? 'Your payment is on its way; waiting for it to land in a block.' : 'Taker payment seen; waiting for it to land in a block.';
   if (m.maker_chain === 'blrd') return 'Taker payment in a block; settling.';
-  if (!m.maker_txid) return 'Taker paid and in a block; waiting for the maker to deliver.';
+  if (!m.maker_txid) return role === 'taker' ? 'Your payment is in a block; waiting for the maker to deliver.' : 'The taker has paid; your turn to deliver.';
   if (!m.maker_included_height) return 'Maker payment reported; waiting for it to land in a block.';
   return 'Maker payment in a block; bond releases when it is deep.';
 }

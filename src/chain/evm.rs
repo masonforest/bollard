@@ -9,6 +9,8 @@ const TRANSFER_TOPIC: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a116
 pub struct EvmRpc {
     url: String,
     http: reqwest::Client,
+    /// Per (address, amount): the newest block already scanned for a native payment.
+    scanned: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, u64>>>,
 }
 
 fn hex_u128(v: Option<&Value>) -> u128 {
@@ -26,7 +28,53 @@ fn addr_eq(a: &str, b: &str) -> bool {
 impl EvmRpc {
     pub fn new(url: &str) -> Self {
         let http = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().expect("http client");
-        Self { url: url.to_string(), http }
+        Self { url: url.to_string(), http, scanned: Default::default() }
+    }
+
+    /// Find a payment of at least `amount` atoms of `asset` to `to` since `since_ms`:
+    /// Transfer logs for a token, a scan of recent blocks for native ETH.
+    pub async fn find_payment(&self, asset: &AssetInfo, to: &str, amount: u64, since_ms: u64) -> Result<Option<String>> {
+        let need: u128 = amount as u128 * asset.atom_scale;
+        let head = self.block_number().await?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let elapsed_blocks = (now.saturating_sub(since_ms / 1000) / 12 + 10).min(900);
+        let from = head.saturating_sub(elapsed_blocks);
+        if let Some(contract) = asset.contract {
+            let topic_to = format!("0x{:0>64}", to.trim_start_matches("0x").to_lowercase());
+            let logs = self
+                .call("eth_getLogs", json!([{"address": contract, "fromBlock": format!("0x{from:x}"), "toBlock": "latest", "topics": [TRANSFER_TOPIC, null, topic_to]}]))
+                .await?;
+            let mut best: Option<String> = None;
+            for l in logs.as_array().cloned().unwrap_or_default() {
+                if hex_u128(l.get("data")) >= need {
+                    best = l.get("transactionHash").and_then(|h| h.as_str()).map(|h| h.to_string());
+                }
+            }
+            return Ok(best);
+        }
+        // Native ETH: look at blocks we have not seen for this address, newest first.
+        let key = format!("{to}:{amount}:{since_ms}");
+        let start = { self.scanned.lock().unwrap().get(&key).copied().map(|b| b + 1).unwrap_or(from) };
+        let mut found = None;
+        let mut n = head;
+        while n >= start && head - n < 60 {
+            let block = self.call("eth_getBlockByNumber", json!([format!("0x{n:x}"), true])).await?;
+            if let Some(txs) = block.get("transactions").and_then(|t| t.as_array()) {
+                for tx in txs {
+                    if tx.get("to").and_then(|t| t.as_str()).map(|t| addr_eq(t, to)).unwrap_or(false) && hex_u128(tx.get("value")) >= need {
+                        found = tx.get("hash").and_then(|h| h.as_str()).map(|h| h.to_string());
+                    }
+                }
+            }
+            if found.is_some() || n == 0 {
+                break;
+            }
+            n -= 1;
+        }
+        if found.is_none() {
+            self.scanned.lock().unwrap().insert(key, head);
+        }
+        Ok(found)
     }
 
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {

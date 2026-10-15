@@ -42,16 +42,20 @@
           <div class="muted small-text">Match <code id="s-match"></code></div>
         </div>
       </div>
-      <label class="box">
-        <span class="box-label">Your transaction id</span>
-        <div class="box-row"><input id="s-txid" type="text" placeholder="paste the txid once sent" autocomplete="off" spellcheck="false"></div>
-      </label>
-      <button id="s-report" class="primary">I've paid</button>
+      <div id="s-watch" class="status muted">Watching for your payment… it is picked up as soon as it reaches the mempool, nothing to paste.</div>
+      <details id="s-manual" class="manual">
+        <summary class="muted small-text">Paste a transaction id instead</summary>
+        <label class="box">
+          <span class="box-label">Your transaction id</span>
+          <div class="box-row"><input id="s-txid" type="text" placeholder="txid" autocomplete="off" spellcheck="false"></div>
+        </label>
+        <button id="s-report" class="small">Report this txid</button>
+      </details>
       <div id="s-status" class="status"></div>
       <button id="s-done" class="small hidden">Start another swap</button>
     </div>
 
-    <div class="swap">
+    <div class="swap" id="s-card">
       <div class="swap-title">Swap</div>
 
       <label class="box">

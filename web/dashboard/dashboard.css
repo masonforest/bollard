@@ -97,3 +97,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .token-row .sym { color: var(--muted); font-size: 14px; }
 .token-row .right { margin-left: auto; color: var(--muted); font-size: 13px; }
 .box-row .token-btn { flex: none; }
+.small.ok { border-color: #1a7f37; color: #1a7f37; }
+.manual { margin-top: 10px; }
+.manual summary { cursor: pointer; }

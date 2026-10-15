@@ -29,6 +29,7 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/orders", get(orders))
         .route("/matches", get(matches))
         .route("/trades", get(trades))
+        .route("/find-payment", get(find_payment))
         .route("/log", get(log_stream))
         .route("/log/range", get(log_range))
         .route("/log/seq/{seq}", get(log_by_seq))
@@ -173,6 +174,31 @@ async fn trades(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
         .rev()
         .map(|(id, price, qty, ts, side, status)| json!({"match": hex::encode(id), "price": price, "quantity": qty, "time": ts, "side": side, "status": status}))
         .collect::<Vec<_>>())))
+}
+
+#[derive(Deserialize)]
+struct FindQuery {
+    #[serde(rename = "match")]
+    match_id: String,
+    leg: Option<u8>,
+}
+
+/// Look on the chain for the payment a leg is waiting for. A convenience for
+/// wallets so nobody has to paste a txid; the report itself is still a signed
+/// transaction from the payer (or anyone, for the maker's leg).
+async fn find_payment(State(n): S, Query(q): Query<FindQuery>) -> ApiResult {
+    let m = n.get_match(&hex::decode(&q.match_id)?).await?;
+    let leg = q.leg.unwrap_or(0);
+    let (asset, to, amount, already) = if leg == 0 { (m.taker_asset, m.taker_pay_to, m.taker_amount, m.taker_txid) } else { (m.maker_asset, m.maker_pay_to, m.maker_amount, m.maker_txid) };
+    if let Some(t) = already {
+        return Ok(Json(json!({"txid": t, "reported": true})));
+    }
+    let asset = chain::asset(&asset).ok_or_else(|| anyhow::anyhow!("unknown asset"))?;
+    if asset.chain == "blrd" {
+        return Ok(Json(json!({"txid": null, "ledger": true})));
+    }
+    let txid = n.chains.find_payment(asset, &to, amount as u64, m.claimed_ts as u64).await?;
+    Ok(Json(json!({"txid": txid, "reported": false})))
 }
 
 fn entry_json(bytes: &[u8]) -> Value {

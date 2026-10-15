@@ -128,7 +128,7 @@ pub async fn enter(a: EnterArgs) -> Result<()> {
         println!("raw: {raw}");
         return Ok(());
     }
-    let rpc = crate::chain::btc::BtcRpc::new(&a.bitcoin_rpc);
+    let rpc = crate::chain::btc::BtcRpc::new(&a.bitcoin_rpc, &a.esplora);
     let txid = rpc.send_raw_transaction(&raw).await?;
     println!("broadcast: {txid}");
     println!("the draw happens in the block that includes it; watch /entries and /epochs on your node");

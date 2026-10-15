@@ -86,8 +86,18 @@ pub struct Chains {
 }
 
 impl Chains {
-    pub fn new(btc_url: &str, eth_url: &str) -> Self {
-        Self { btc: btc::BtcRpc::new(btc_url), eth: evm::EvmRpc::new(eth_url) }
+    pub fn new(btc_url: &str, eth_url: &str, esplora: &str) -> Self {
+        Self { btc: btc::BtcRpc::new(btc_url, esplora), eth: evm::EvmRpc::new(eth_url) }
+    }
+
+    /// Look for a payment of at least `amount` atoms of `asset` to `to` made
+    /// after `since_ms`. A helper for wallets, not part of consensus.
+    pub async fn find_payment(&self, asset: &AssetInfo, to: &str, amount: u64, since_ms: u64) -> Result<Option<String>> {
+        match asset.chain {
+            "btc" => self.btc.find_payment(to, amount, since_ms).await,
+            "eth" => self.eth.find_payment(asset, to, amount, since_ms).await,
+            other => Err(anyhow!("no adapter for chain {other}")),
+        }
     }
 
     /// Where does the payment `txid` of at least `amount` atoms of `asset` to `to` stand?
