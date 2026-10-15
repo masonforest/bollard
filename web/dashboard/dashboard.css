@@ -127,3 +127,6 @@ body.embedded main.wide { padding-top: 16px; }
 .seg button { font: inherit; font-size: 15px; font-weight: 600; border: 0; background: none; color: var(--muted); padding: 7px 22px; border-radius: 999px; cursor: pointer; }
 .seg button.on { background: var(--fg); color: var(--bg); }
 #s-amount { font-size: 34px; font-weight: 600; border: 0; background: none; color: var(--fg); width: 100%; outline: none; padding: 4px 0; min-width: 0; }
+.seg.small { margin: 0 0 0 6px; padding: 2px; }
+.seg.small button { font-size: 13px; padding: 4px 12px; font-weight: 500; }
+#d-qr svg { width: 120px; display: block; background: #fff; border-radius: 6px; }
