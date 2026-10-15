@@ -251,7 +251,7 @@ function render() {
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['magic', 'Magic Link'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'Activity'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['magic', 'Send'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -274,7 +274,7 @@ const views = {
       <div class="stack center">
         <h1>${money(balanceOf(c), c)}</h1>
       </div>
-      <div class="row fill"><button class="primary" data-action="tab" data-value="magic">Magic Link</button></div>
+      <div class="row fill"><button class="primary" data-action="tab" data-value="magic">Send</button></div>
       ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
 `;
   },
@@ -335,7 +335,7 @@ const views = {
       </form>` : '<p class="muted center">Nothing to withdraw yet.</p>'}`;
   },
   activity: () => {
-    const act = state.activity; if (!act) return '<h2>Activity</h2><p class="muted center"><span class="spinner"></span>Loading…</p>';
+    const act = state.activity; if (!act) return '<h2>History</h2><p class="muted center"><span class="spinner"></span>Loading…</p>';
     const rows = [];
     for (const t of act.transfers) {
       const out = t.sender === me();
@@ -349,7 +349,7 @@ const views = {
       else if (m.kind === 'trade' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Swap', value: `${money(m.taker_amount, m.taker_asset)} → ${money(m.maker_amount, m.maker_asset)}`, sub: 'instant' });
     }
     rows.sort((a, b) => b.seq - a.seq);
-    return `<h2>Activity</h2>${rows.length ? `<ul>${rows.map((r) => `<li><span>${r.label}<span class="sub">${esc(r.sub)} · ${new Date(r.ts).toLocaleString()}</span></span><span>${r.value}</span></li>`).join('')}</ul>` : '<p class="muted center">Nothing yet.</p>'}`;
+    return `<h2>History</h2>${rows.length ? `<ul>${rows.map((r) => `<li><span>${r.label}<span class="sub">${esc(r.sub)} · ${new Date(r.ts).toLocaleString()}</span></span><span>${r.value}</span></li>`).join('')}</ul>` : '<p class="muted center">Nothing yet.</p>'}`;
   },
   settings: () => `
     <h2>Settings</h2>
