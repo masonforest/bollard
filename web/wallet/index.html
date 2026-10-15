@@ -272,6 +272,8 @@ function render() {
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
   main.classList.toggle('full', state.view === 'trade' && !state.accept);
+  // Refreshes must not rebuild the Trade frame, or whatever is typed in it is lost.
+  if (state.view === 'trade' && !state.accept && !state.busy && !state.error && main.querySelector('iframe.trade')) return;
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '') + (state.qr ? `<div class="overlay" data-action="closeqr"><div class="qr big">${qrSvg(state.qr)}</div><p class="muted">Tap to close</p></div>` : '');
   nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
