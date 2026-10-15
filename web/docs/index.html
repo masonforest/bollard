@@ -10,9 +10,9 @@
 <body>
 <main>
   <nav>
-    <a href="/" class="here">Bollard</a>
-    <a href="https://app.bollard.exchange/">App</a>
-    <a href="/whitepaper/">White paper</a>
+    <a href="/">Bollard</a>
+    <a href="/docs/" class="here">Docs</a>
+    <a href="/docs/whitepaper/">White paper</a>
     <a href="https://github.com/masonforest/bollard">Source</a>
     <a href="https://mainnet.bollard.exchange/status">API</a>
   </nav>
@@ -24,8 +24,8 @@
   <p>One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: every block runs a fee-weighted lottery over entries written to Bitcoin itself, and each winning entry commits to the log, which is how the log is finalized.</p>
 
   <div class="links">
-    <a href="https://app.bollard.exchange/"><b>App</b><span>A wallet: create a passkey, deposit, send in any currency, withdraw. Pro mode has the book and charts.</span></a>
-    <a href="/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, options, cover.</span></a>
+    <a href="/"><b>App</b><span>A wallet: create a passkey, deposit, send in any currency, withdraw. Pro mode has the book and charts.</span></a>
+    <a href="/docs/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, options, cover.</span></a>
     <a href="https://github.com/masonforest/bollard"><b>Source</b><span>The node, in Rust. One binary and a Postgres database.</span></a>
     <a href="https://mainnet.bollard.exchange/status"><b>API</b><span>mainnet.bollard.exchange: JSON and server-sent events.</span></a>
   </div>
@@ -47,7 +47,7 @@ bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantit
 # or rest them on the ledger; every market is quoted in USDC
 bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 \
   --price 9000000000000 --expiry-height 980000</code></pre>
-  <p class="muted">Amounts are in atoms: sats, gwei, 10<sup>-6</sup> USDC, rill (10<sup>-8</sup> BLRD). Prices are quote atoms per 100,000,000 base atoms. Holders never need BLRD; people use the <a href="https://app.bollard.exchange/">wallet</a>.</p>
+  <p class="muted">Amounts are in atoms: sats, gwei, 10<sup>-6</sup> USDC, rill (10<sup>-8</sup> BLRD). Prices are quote atoms per 100,000,000 base atoms. Holders never need BLRD; people use the <a href="/">wallet</a>.</p>
 
   <footer>Bollard is early software on mainnet with small amounts. Read the white paper before trading.</footer>
 </main>

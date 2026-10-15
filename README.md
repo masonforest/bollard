@@ -43,7 +43,7 @@ bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantit
 bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 --price 9000000000000 --expiry-height 980000
 ```
 
-People use the wallet at https://app.bollard.exchange instead: create a passkey, deposit, send, exercise to withdraw.
+People use the wallet at https://bollard.exchange instead: create a passkey, deposit, send, exercise to withdraw.
 
 Amounts are in atoms: sats, gwei, 10^-6 USDC, rill (10^-8 BLRD). Prices are quote atoms per 100,000,000 base atoms.
 

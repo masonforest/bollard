@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render docs/whitepaper.md to web/whitepaper/index.html. Run after editing the Markdown."""
+"""Render docs/whitepaper.md to web/docs/whitepaper/index.html. Run after editing the Markdown."""
 import pathlib, markdown
 root = pathlib.Path(__file__).resolve().parent.parent
 md = (root / "docs/whitepaper.md").read_text()
@@ -17,8 +17,8 @@ html = f"""<!doctype html>
 <main>
   <nav>
     <a href="/">Bollard</a>
-    <a href="https://app.bollard.exchange/">App</a>
-    <a href="/whitepaper/" class="here">White paper</a>
+    <a href="/docs/">Docs</a>
+    <a href="/docs/whitepaper/" class="here">White paper</a>
     <a href="https://github.com/masonforest/bollard">Source</a>
     <a href="https://mainnet.bollard.exchange/status">API</a>
   </nav>
@@ -28,6 +28,6 @@ html = f"""<!doctype html>
 </body>
 </html>
 """
-out = root / "web/whitepaper/index.html"
+out = root / "web/docs/whitepaper/index.html"
 out.write_text(html)
 print(f"wrote {out} ({len(html)} bytes)")
