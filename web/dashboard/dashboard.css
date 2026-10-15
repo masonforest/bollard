@@ -113,6 +113,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Signed out: nothing but the two buttons, centered on the page. */
 .gate { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; }
+.gate h1 { font-size: 26px; font-weight: 600; margin: 0 0 18px; text-align: center; }
 .gate .primary { width: min(320px, 100%); margin: 0; }
 .gate .ghost { background: none; color: var(--accent); border: 1px solid var(--accent); }
 .gate .error { min-height: 1.4em; text-align: center; }

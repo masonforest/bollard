@@ -206,6 +206,7 @@ function render() {
   if (!state.key) {
     main.innerHTML = `
       <div class="gate">
+        <h2 style="margin-bottom:18px">Welcome to Bollard Exchange</h2>
         <button class="primary" data-action="create">Create account</button>
         <button data-action="signin">Sign in</button>
         ${state.error ? `<p class="error">${esc(state.error)}</p>` : ''}
