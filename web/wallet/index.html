@@ -33,6 +33,7 @@ p { margin: 0; }
 .row.center { justify-content: center; }
 .row.between { justify-content: space-between; }
 .row.fill { flex-wrap: nowrap; gap: 8px; }
+.row.end { justify-content: flex-end; gap: 8px; }
 .row.fill button { flex: 1; padding: 8px 12px; font-size: 15px; white-space: nowrap; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .stack.center { align-items: center; }
@@ -54,6 +55,7 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .qr.big svg { width: min(320px, 100%); }
 .ok { color: var(--ok); }
 main.full { max-width: none; padding: 0; }
+.overlay { position: fixed; inset: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; cursor: pointer; }
 iframe.trade { display: block; width: 100%; height: calc(100dvh - 52px - env(safe-area-inset-top)); border: 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -127,7 +129,7 @@ const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT') ? `${SYMBO
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');
 
 // ----- state -----
-const state = { key: stored('bollard.passkey'), view: 'home', info: null, busy: false, error: '', activity: null, deposit: null, success: null, book: null };
+const state = { flight: stored('bollard.flight'), qr: null, key: stored('bollard.passkey'), view: 'home', info: null, busy: false, error: '', activity: null, deposit: null, success: null, book: null };
 const me = () => state.key?.pubkey;
 const signer = () => signers.passkey(state.key);
 const currency = () => state.info?.preferred || 'eth:USDC';
@@ -137,7 +139,22 @@ const nav = document.querySelector('nav');
 async function refresh() {
   if (!state.key) return render();
   state.info = await j(`/balances/${me()}`);
+  await checkFlight();
   render();
+}
+// A link that is out: once whoever opened it has accepted, the throwaway account is empty and the send is done.
+async function checkFlight() {
+  const f = state.flight; if (!f) return;
+  try {
+    const b = await j(`/balances/${hex.enc(pubkeyOf(f.secret))}`);
+    const left = (b.assets || []).some((x) => x.amount > 0) || b.blrd > 0;
+    if (!left) endFlight(`Sent ${f.amount}`);
+  } catch {}
+}
+function endFlight(success) { state.flight = null; localStorage.removeItem('bollard.flight'); if (state.qr) state.qr = null; if (success) state.success = success; }
+async function shareLink(link) {
+  if (navigator.share) { try { await navigator.share({ url: link }); return; } catch {} }
+  try { await navigator.clipboard.writeText(link); state.success = 'Link copied'; } catch {}
 }
 async function run(fn) {
   state.busy = true; state.error = ''; render();
@@ -162,7 +179,18 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
-  magicQr: () => { state.magic.qr = !state.magic.qr; render(); },
+  share: (el) => shareLink(el.dataset.link),
+  qr: (el) => { state.qr = el.dataset.link; render(); },
+  closeqr: () => { state.qr = null; render(); },
+  cancelFlight: () => run(async () => {
+    const f = state.flight; const pk = hex.enc(pubkeyOf(f.secret));
+    const b = await j(`/balances/${pk}`);
+    for (const x of [...(b.assets || []), ...(b.blrd > 0 ? [{ asset: 'BLRD', amount: b.blrd }] : [])].filter((x) => x.amount > 0)) {
+      await submit(api, signers.secret(f.secret), TxType.Send, { to: hex.dec(me()), asset: x.asset, amount: BigInt(x.amount) });
+    }
+    endFlight(null);
+    await refresh();
+  }),
   dismissAccept: () => { state.accept = null; history.replaceState(null, '', location.pathname); render(); },
   accept: () => run(async () => {
     const a = state.accept; const signer = signers.secret(a.secret);
@@ -175,7 +203,7 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; state.qr = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
   depositAsset: (el) => { state.deposit = { asset: el.dataset.value }; loadDeposit(); render(); },
@@ -183,13 +211,17 @@ const actions = {
 };
 const forms = {
   // Magic link, as on bitcoin.dance: fund a throwaway key and share a link that carries it. Whoever opens the link accepts the money.
-  magic: (form) => run(async () => {
+  send: (form, via) => run(async () => {
+    state.via = via;
     const asset = sendFrom().asset;
     const amount = toAtoms(form.amount.value, asset);
     if (amount <= 0n) throw new Error('Enter an amount.');
     const secret = randomSecret();
     await tx(TxType.Send, { to: pubkeyOf(secret), asset, amount });
-    state.magic = { link: `${location.origin}/#magic/${secret}`, amount: money(amount, asset), qr: false }; state.view = 'home';
+    const link = `${location.origin}/#magic/${secret}`;
+    state.flight = { secret, link, asset, amount: money(amount, asset) }; store('bollard.flight', state.flight);
+    if (via === 'qr') state.qr = link;
+    else await shareLink(link);
     await refresh();
   }),
   withdraw: (form) => run(async () => {
@@ -270,7 +302,7 @@ function render() {
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
   main.classList.toggle('full', state.view === 'trade' && !state.accept);
-  main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
+  main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '') + (state.qr ? `<div class="overlay" data-action="closeqr"><div class="qr big">${qrSvg(state.qr)}</div><p class="muted">Tap to close</p></div>` : '');
   nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
@@ -287,34 +319,36 @@ function acceptView() {
 }
 const views = {
   home: () => {
-    const c = currency(); const m = state.magic;
+    const c = currency();
     const held = holdings();
     const empty = balanceOf(c) === 0n && held.length > 0;
     const from = sendFrom();
     const chains = [...new Set(held.map((h) => assets[h.asset]?.chain))];
     const tokens = held.filter((h) => assets[h.asset]?.chain === from.chain);
     const others = held.filter((h) => h.asset !== c);
-    return `
-      ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
-      <div class="stack center">
-        <h1>${money(balanceOf(c), c)}</h1>
-      </div>
-      <form data-form="magic" class="stack">
+    const f = state.flight;
+    const busy = state.busy ? 'disabled' : '';
+    const body = f ? `
+      <div class="stack">
+        <p class="muted center"><span class="spinner"></span>${state.busy ? 'Cancelling' : 'Sending'} ${esc(f.amount)}</p>
+        <div class="row fill"><button data-action="cancelFlight" ${busy}>Cancel</button><button data-action="qr" data-link="${esc(f.link)}">QR code</button><button class="primary" data-action="share" data-link="${esc(f.link)}">${navigator.share ? 'Share link' : 'Copy link'}</button></div>
+      </div>` : `
+      <form data-form="send" class="stack">
         ${empty ? `
         <div class="row fill">
           <div class="field" style="flex:1"><span class="label">Network</span><select name="chain" data-change="fromChain">${chains.map((ch) => `<option value="${ch}" ${ch === from.chain ? 'selected' : ''}>${CHAIN[ch] || ch}</option>`).join('')}</select></div>
           <div class="field" style="flex:1"><span class="label">Token</span><select name="asset" data-change="fromAsset">${tokens.map((h) => `<option value="${h.asset}" ${h.asset === from.asset ? 'selected' : ''}>${assets[h.asset]?.symbol || h.asset} · ${money(h.amount, h.asset)}</option>`).join('')}</select></div>
         </div>` : ''}
-        <div class="field"><span class="label">Amount${empty ? ` (${assets[from.asset]?.symbol || ''})` : ''}</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
-        <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Create Magic Payment Link</button>
-      </form>
-      ${m ? `
-      <div class="stack">
-        <input class="mono" value="${esc(m.link)}" readonly onclick="this.select()">
-        <div class="row fill"><button data-action="copy" data-text="${esc(m.link)}" data-label="Copy to Clipboard">Copy to Clipboard</button><button data-action="magicQr">${m.qr ? 'Hide QR Code' : 'Show QR Code'}</button></div>
-        ${m.qr ? `<div class="stack center"><p class="muted">Sending ${esc(m.amount)}…</p><div class="qr big">${qrSvg(m.link)}</div></div>` : ''}
-        <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it to them however you like.</p>
-      </div>` : ''}
+        <input class="amount" name="amount" placeholder="${empty ? '0 ' + (assets[from.asset]?.symbol || '') : '0.00'}" inputmode="decimal" autocomplete="off" required>
+        <div class="row end">
+          <button name="via" value="qr" ${busy}>${state.busy && state.via === 'qr' ? 'Signing…' : 'Generate QR code'}</button>
+          <button class="primary" name="via" value="share" ${busy}>${state.busy && state.via === 'share' ? 'Signing…' : 'Send'}</button>
+        </div>
+      </form>`;
+    return `
+      ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
+      <div class="stack center"><h1>${money(balanceOf(c), c)}</h1></div>
+      ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span>${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
   },
   trade: () => `<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`,
@@ -392,7 +426,7 @@ const views = {
 main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
-main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.target.dataset.form]; if (fn) fn(e.target); });
+main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.target.dataset.form]; if (fn) fn(e.target, e.submitter?.value); });
 
 (async () => {
   if (api) { try { const r = await fetch(api + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) api = ''; } catch { api = ''; } }
