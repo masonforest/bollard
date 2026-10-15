@@ -18,6 +18,9 @@ pub struct Account {
     pub balance: i64,
     pub locked: i64,
     pub preferred: Option<String>,
+    pub staked: i64,
+    pub unstaking: i64,
+    pub unstake_height: i32,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -36,7 +39,6 @@ pub struct Issuer {
     pub account: Vec<u8>,
     pub asset: String,
     pub issued: i64,
-    pub cover: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

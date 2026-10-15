@@ -60,33 +60,22 @@ pub async fn transfer(c: &mut PgConnection, from: &[u8], to: &[u8], asset: &str,
     Ok(())
 }
 
-pub async fn issuer_row(c: &mut PgConnection, account: &[u8], asset: &str) -> Result<(i64, i64)> {
-    let row: Option<(i64, i64)> = sqlx::query_as("select issued, cover from issuers where account = $1 and asset = $2").bind(account).bind(asset).fetch_optional(c).await?;
-    Ok(row.unwrap_or((0, 0)))
+pub async fn issued(c: &mut PgConnection, account: &[u8], asset: &str) -> Result<i64> {
+    let row: Option<(i64,)> = sqlx::query_as("select issued from issuers where account = $1 and asset = $2").bind(account).bind(asset).fetch_optional(c).await?;
+    Ok(row.map(|r| r.0).unwrap_or(0))
 }
 
-pub async fn set_issuer(c: &mut PgConnection, account: &[u8], asset: &str, issued: i64, cover: i64) -> Result<()> {
-    sqlx::query("insert into issuers (account, asset, issued, cover) values ($1, $2, $3, $4) on conflict (account, asset) do update set issued = $3, cover = $4")
+pub async fn set_issued(c: &mut PgConnection, account: &[u8], asset: &str, issued: i64) -> Result<()> {
+    sqlx::query("insert into issuers (account, asset, issued) values ($1, $2, $3) on conflict (account, asset) do update set issued = $3")
         .bind(account)
         .bind(asset)
         .bind(issued)
-        .bind(cover)
         .execute(c)
         .await?;
     Ok(())
 }
 
 /// The share of an issuer's cover that backs `quantity` of its outstanding options.
-pub fn cover_for(issued: i64, cover: i64, quantity: i64) -> i64 {
-    if issued <= 0 {
-        return 0;
-    }
-    ((cover as i128 * quantity as i128) / issued as i128) as i64
-}
-
-pub fn no_issuer() -> Vec<u8> {
-    Vec::new()
-}
 
 pub fn ensure_asset(asset: &str) -> Result<&'static crate::chain::AssetInfo> {
     crate::chain::asset(asset).ok_or_else(|| anyhow!("unknown asset {asset}"))

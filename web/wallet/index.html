@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-title" content="Bollard">
 <title>Bollard</title>
-<meta name="description" content="Send, receive and swap across chains. Instant, free, backed by bonded makers and finalized on Bitcoin.">
+<meta name="description" content="Send, receive and swap across chains. Instant, free, backed by staked makers and finalized on Bitcoin.">
 <script type="importmap">
 { "imports": {
   "flatbuffers": "https://unpkg.com/flatbuffers@25.2.10/mjs/flatbuffers.js",
@@ -387,7 +387,7 @@ const views = {
         <div class="field"><span class="label">Currency</span><select name="asset">${held.map((x) => `<option value="${x.asset}">${NAMES[x.asset] || x.asset} · ${money(x.amount, x.asset)}</option>`).join('')}</select></div>
         <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
         <div class="field"><span class="label">Deliver to (address on that chain)</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
-        <p class="muted">The maker who issued these delivers the real coins; their bond pays you if they don't.</p>
+        <p class="muted">The maker who issued these delivers the real coins; their stake pays you if they don't.</p>
         <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Withdraw</button>
       </form>` : '<p class="muted center">Nothing to withdraw yet.</p>'}`;
   },

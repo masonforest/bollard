@@ -54,10 +54,11 @@ async function renderAccount() {
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
     const bal = a ? fromAtoms(a.balance, 'BLRD') : '?';
-    $('a-balance').textContent = a ? `${bal} (${fromAtoms(a.locked, 'BLRD')} locked, nonce ${a.nonce})` : '?';
+    $('a-balance').textContent = a ? `${bal} (${fromAtoms(a.staked, 'BLRD')} staked${a.unstaking > 0 ? `, ${fromAtoms(a.unstaking, 'BLRD')} unstaking at ${a.unstake_height}` : ''}, nonce ${a.nonce})` : '?';
+    $('st-info').textContent = a ? `staked ${fromAtoms(a.staked, 'BLRD')} BLRD` : '';
     $('my-blrd').textContent = bal;
     const b = await j(`/balances/${pk}`).catch(() => null);
-    $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)} (cover ${fromAtoms(x.cover, 'BLRD')})</span></div>`)].join('') : '';
+    $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)}</span></div>`)].join('') : '';
   } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
 // Signed out: the page is just two buttons. Create makes and registers a passkey; Sign in asks for an existing one.
@@ -420,11 +421,19 @@ function updateRecvHint() {
 }
 $('o-side').onchange = updateRecvHint;
 $('o-settle').onchange = () => { const dep = $('o-settle').value === '1'; $('o-price-unit').textContent = dep ? `(${assets[$('m-base-asset').value]?.symbol} on chain per ${assets[$('m-base-asset').value]?.symbol}, usually 1)` : ''; $('o-recv').parentElement.classList.toggle('hidden', !dep); $('o-bond').parentElement.classList.toggle('hidden', dep); $('o-claim-bond').parentElement.classList.toggle('hidden', !dep); if (dep) $('o-side').value = '1'; };
+$('stake-form').onsubmit = async (ev) => {
+  ev.preventDefault(); $('st-error').textContent = '';
+  try {
+    const amount = toAtoms($('st-amount').value, 'BLRD');
+    await send(api, ensureKey(), $('st-kind').value === 'stake' ? TxType.Stake : TxType.Unstake, { amount });
+    $('st-amount').value = ''; renderAccount(); loadPro();
+  } catch (e) { $('st-error').textContent = e.message; }
+};
 $('issue-form').onsubmit = async (ev) => {
   ev.preventDefault(); $('i-error').textContent = '';
   try {
     const asset = $('i-asset').value; const quantity = toAtoms($('i-qty').value, asset);
-    if ($('i-kind').value === 'mint') await send(api, ensureKey(), TxType.Mint, { asset, quantity, bond: toAtoms($('i-bond').value || '0', 'BLRD') });
+    if ($('i-kind').value === 'mint') await send(api, ensureKey(), TxType.Mint, { asset, quantity });
     else await send(api, ensureKey(), TxType.Burn, { asset, quantity });
     $('i-qty').value = ''; renderAccount(); loadPro();
   } catch (e) { $('i-error').textContent = e.message; }

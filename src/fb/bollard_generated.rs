@@ -13,10 +13,10 @@ pub mod fb {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_TX_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_TX_BODY: u8 = 10;
+pub const ENUM_MAX_TX_BODY: u8 = 12;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_TX_BODY: [TxBody; 11] = [
+pub const ENUM_VALUES_TX_BODY: [TxBody; 13] = [
   TxBody::NONE,
   TxBody::Transfer,
   TxBody::PlaceOrder,
@@ -28,6 +28,8 @@ pub const ENUM_VALUES_TX_BODY: [TxBody; 11] = [
   TxBody::Send,
   TxBody::Exercise,
   TxBody::SetCurrency,
+  TxBody::Stake,
+  TxBody::Unstake,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -46,9 +48,11 @@ impl TxBody {
   pub const Send: Self = Self(8);
   pub const Exercise: Self = Self(9);
   pub const SetCurrency: Self = Self(10);
+  pub const Stake: Self = Self(11);
+  pub const Unstake: Self = Self(12);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 10;
+  pub const ENUM_MAX: u8 = 12;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Transfer,
@@ -61,6 +65,8 @@ impl TxBody {
     Self::Send,
     Self::Exercise,
     Self::SetCurrency,
+    Self::Stake,
+    Self::Unstake,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -76,6 +82,8 @@ impl TxBody {
       Self::Send => Some("Send"),
       Self::Exercise => Some("Exercise"),
       Self::SetCurrency => Some("SetCurrency"),
+      Self::Stake => Some("Stake"),
+      Self::Unstake => Some("Unstake"),
       _ => None,
     }
   }
@@ -982,7 +990,6 @@ impl<'a> ::flatbuffers::Follow<'a> for Mint<'a> {
 impl<'a> Mint<'a> {
   pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
   pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
-  pub const VT_BOND: ::flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -994,7 +1001,6 @@ impl<'a> Mint<'a> {
     args: &'args MintArgs<'args>
   ) -> ::flatbuffers::WIPOffset<Mint<'bldr>> {
     let mut builder = MintBuilder::new(_fbb);
-    builder.add_bond(args.bond);
     builder.add_quantity(args.quantity);
     if let Some(x) = args.asset { builder.add_asset(x); }
     builder.finish()
@@ -1015,13 +1021,6 @@ impl<'a> Mint<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(Mint::VT_QUANTITY, Some(0)).unwrap()}
   }
-  #[inline]
-  pub fn bond(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Mint::VT_BOND, Some(0)).unwrap()}
-  }
 }
 
 impl ::flatbuffers::Verifiable for Mint<'_> {
@@ -1032,7 +1031,6 @@ impl ::flatbuffers::Verifiable for Mint<'_> {
     v.visit_table(pos)?
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
      .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
-     .visit_field::<u64>("bond", Self::VT_BOND, false)?
      .finish();
     Ok(())
   }
@@ -1040,7 +1038,6 @@ impl ::flatbuffers::Verifiable for Mint<'_> {
 pub struct MintArgs<'a> {
     pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub quantity: u64,
-    pub bond: u64,
 }
 impl<'a> Default for MintArgs<'a> {
   #[inline]
@@ -1048,7 +1045,6 @@ impl<'a> Default for MintArgs<'a> {
     MintArgs {
       asset: None,
       quantity: 0,
-      bond: 0,
     }
   }
 }
@@ -1065,10 +1061,6 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MintBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_quantity(&mut self, quantity: u64) {
     self.fbb_.push_slot::<u64>(Mint::VT_QUANTITY, quantity, 0);
-  }
-  #[inline]
-  pub fn add_bond(&mut self, bond: u64) {
-    self.fbb_.push_slot::<u64>(Mint::VT_BOND, bond, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> MintBuilder<'a, 'b, A> {
@@ -1090,7 +1082,6 @@ impl ::core::fmt::Debug for Mint<'_> {
     let mut ds = f.debug_struct("Mint");
       ds.field("asset", &self.asset());
       ds.field("quantity", &self.quantity());
-      ds.field("bond", &self.bond());
       ds.finish()
   }
 }
@@ -1563,6 +1554,198 @@ impl ::core::fmt::Debug for SetCurrency<'_> {
       ds.finish()
   }
 }
+pub enum StakeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Stake<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for Stake<'a> {
+  type Inner = Stake<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> Stake<'a> {
+  pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Stake { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args StakeArgs
+  ) -> ::flatbuffers::WIPOffset<Stake<'bldr>> {
+    let mut builder = StakeBuilder::new(_fbb);
+    builder.add_amount(args.amount);
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn amount(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Stake::VT_AMOUNT, Some(0)).unwrap()}
+  }
+}
+
+impl ::flatbuffers::Verifiable for Stake<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct StakeArgs {
+    pub amount: u64,
+}
+impl<'a> Default for StakeArgs {
+  #[inline]
+  fn default() -> Self {
+    StakeArgs {
+      amount: 0,
+    }
+  }
+}
+
+pub struct StakeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> StakeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_amount(&mut self, amount: u64) {
+    self.fbb_.push_slot::<u64>(Stake::VT_AMOUNT, amount, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> StakeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    StakeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Stake<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for Stake<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Stake");
+      ds.field("amount", &self.amount());
+      ds.finish()
+  }
+}
+pub enum UnstakeOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Unstake<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for Unstake<'a> {
+  type Inner = Unstake<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> Unstake<'a> {
+  pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Unstake { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args UnstakeArgs
+  ) -> ::flatbuffers::WIPOffset<Unstake<'bldr>> {
+    let mut builder = UnstakeBuilder::new(_fbb);
+    builder.add_amount(args.amount);
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn amount(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Unstake::VT_AMOUNT, Some(0)).unwrap()}
+  }
+}
+
+impl ::flatbuffers::Verifiable for Unstake<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct UnstakeArgs {
+    pub amount: u64,
+}
+impl<'a> Default for UnstakeArgs {
+  #[inline]
+  fn default() -> Self {
+    UnstakeArgs {
+      amount: 0,
+    }
+  }
+}
+
+pub struct UnstakeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> UnstakeBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_amount(&mut self, amount: u64) {
+    self.fbb_.push_slot::<u64>(Unstake::VT_AMOUNT, amount, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> UnstakeBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    UnstakeBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Unstake<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for Unstake<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Unstake");
+      ds.field("amount", &self.amount());
+      ds.finish()
+  }
+}
 pub enum TxOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -1780,6 +1963,36 @@ impl<'a> Tx<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_stake(&self) -> Option<Stake<'a>> {
+    if self.body_type() == TxBody::Stake {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Stake::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_unstake(&self) -> Option<Unstake<'a>> {
+    if self.body_type() == TxBody::Unstake {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Unstake::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl ::flatbuffers::Verifiable for Tx<'_> {
@@ -1802,6 +2015,8 @@ impl ::flatbuffers::Verifiable for Tx<'_> {
           TxBody::Send => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Send>>("TxBody::Send", pos),
           TxBody::Exercise => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Exercise>>("TxBody::Exercise", pos),
           TxBody::SetCurrency => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SetCurrency>>("TxBody::SetCurrency", pos),
+          TxBody::Stake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Stake>>("TxBody::Stake", pos),
+          TxBody::Unstake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Unstake>>("TxBody::Unstake", pos),
           _ => Ok(()),
         }
      })?
@@ -1935,6 +2150,20 @@ impl ::core::fmt::Debug for Tx<'_> {
         },
         TxBody::SetCurrency => {
           if let Some(x) = self.body_as_set_currency() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        TxBody::Stake => {
+          if let Some(x) = self.body_as_stake() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        TxBody::Unstake => {
+          if let Some(x) = self.body_as_unstake() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

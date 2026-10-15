@@ -124,7 +124,7 @@ async fn account(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
     let a = sqlx::query_as::<_, db::Account>("select * from accounts where pubkey = $1").bind(&pk).fetch_optional(&n.db).await?;
     Ok(Json(match a {
         Some(a) => json!(a),
-        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0, "preferred": null}),
+        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0, "preferred": null, "staked": 0, "unstaking": 0, "unstake_height": 0}),
     }))
 }
 
@@ -147,6 +147,9 @@ async fn balances(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
         "preferred": a.as_ref().and_then(|a| a.preferred.clone()),
         "blrd": a.as_ref().map(|a| a.balance).unwrap_or(0),
         "blrd_locked": a.as_ref().map(|a| a.locked).unwrap_or(0),
+        "blrd_staked": a.as_ref().map(|a| a.staked).unwrap_or(0),
+        "blrd_unstaking": a.as_ref().map(|a| a.unstaking).unwrap_or(0),
+        "unstake_height": a.as_ref().map(|a| a.unstake_height).unwrap_or(0),
         "nonce": a.as_ref().map(|a| a.nonce).unwrap_or(0),
         "assets": totals.iter().map(|(a, t)| json!({"asset": a, "amount": t})).collect::<Vec<_>>(),
         "lots": lots,
@@ -177,7 +180,8 @@ async fn activity(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
 }
 
 async fn issuers(State(n): S) -> ApiResult {
-    let rows = sqlx::query_as::<_, db::Issuer>("select * from issuers where issued > 0 order by asset, cover desc").fetch_all(&n.db).await?;
+    let rows: Vec<(Vec<u8>, String, i64, i64, i64)> = sqlx::query_as("select i.account, i.asset, i.issued, a.staked, a.unstaking from issuers i join accounts a on a.pubkey = i.account where i.issued > 0 order by i.asset, a.staked desc").fetch_all(&n.db).await?;
+    let rows: Vec<Value> = rows.into_iter().map(|(acct, asset, issued, staked, unstaking)| json!({"account": hex::encode(acct), "asset": asset, "issued": issued, "staked": staked, "unstaking": unstaking})).collect();
     Ok(Json(json!(rows)))
 }
 

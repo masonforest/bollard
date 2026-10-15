@@ -3,7 +3,7 @@
 import * as flatbuffers from 'flatbuffers';
 import * as secp from '@noble/secp256k1';
 
-export const TxType = { Transfer: 1, PlaceOrder: 2, CancelOrder: 3, Claim: 4, ReportPayment: 5, Mint: 6, Burn: 7, Send: 8, Exercise: 9, SetCurrency: 10 };
+export const TxType = { Transfer: 1, PlaceOrder: 2, CancelOrder: 3, Claim: 4, ReportPayment: 5, Mint: 6, Burn: 7, Send: 8, Exercise: 9, SetCurrency: 10, Stake: 11, Unstake: 12 };
 
 export const hex = {
   enc: (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, '0')).join(''),
@@ -48,7 +48,10 @@ export function buildTx(account, nonce, type, body) {
     }
     case TxType.Mint: {
       const a = b.createString(body.asset);
-      b.startObject(3); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); b.addFieldInt64(2, big(body.bond ?? 0), 0n); off = b.endObject(); break;
+      b.startObject(2); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); off = b.endObject(); break;
+    }
+    case TxType.Stake: case TxType.Unstake: {
+      b.startObject(1); b.addFieldInt64(0, big(body.amount), 0n); off = b.endObject(); break;
     }
     case TxType.Burn: {
       const a = b.createString(body.asset);

@@ -2,8 +2,8 @@
 
 A cross-chain order book with real settlement, finalized on Bitcoin.
 
-- What trades are options: a maker's promise to deliver a coin on its chain, backed by BLRD cover the maker locks. Holders send, receive and trade options instantly and for free, and exercise them to take the coin out. Holders never need BLRD.
-- Coins move on chain only for deposits (buy options with the coin) and exercises (the issuer delivers, or loses its cover to the holder). Anyone may deliver in the issuer's place and take the cover.
+- What trades are options: a maker's promise to deliver a coin on its chain, backed by BLRD the maker stakes. Holders send, receive and trade options instantly and for free, and exercise them to take the coin out. Holders never need BLRD.
+- Coins move on chain only for deposits (buy options with the coin) and exercises (the issuer delivers, or loses a share of its stake to the holder). Anyone may deliver in the issuer's place and take that share.
 - Every account picks a currency. A send to someone who uses another currency converts on the book in the same entry. Every market is quoted in USDC.
 - Accounts are passkeys (P-256) or secp256k1 keys.
 - One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: a fee-weighted lottery run through OP_RETURN entries, which also commit to the log and finalize it.
@@ -34,8 +34,10 @@ The fee is the entry's weight. The block that includes it runs the draw; if you 
 
 ```sh
 bollard keygen
-# issue 1 BTC of options, locking 10 BLRD as cover
-bollard tx --node https://mainnet.bollard.exchange mint --asset btc:BTC --quantity 100000000 --bond 1000000000
+# stake 10 BLRD; one pool backs everything you issue
+bollard tx --node https://mainnet.bollard.exchange stake --amount 1000000000
+# issue 1 BTC of options
+bollard tx mint --asset btc:BTC --quantity 100000000
 # sell them for on-chain bitcoin (a deposit order); every claim gets its own address from the xpub
 bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 --price 100000000 \
   --receive-address xpub... --expiry-height 980000

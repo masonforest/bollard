@@ -20,12 +20,12 @@
   <h1>Bollard</h1>
   <p class="lead">A cross-chain exchange where balances are bonded promises, finalized on Bitcoin.</p>
 
-  <p>Makers issue options on coins they hold, locking BLRD as cover. Holders send, receive and trade those options instantly and for free, in whatever currency they choose, and exercise them to take the real coin out. If a maker fails to deliver, its cover goes to the holder, and anyone may deliver in its place. Nothing is wrapped and nobody holds custody.</p>
+  <p>Makers stake BLRD and issue options on coins they hold; one stake backs everything a maker issues. Holders send, receive and trade those options instantly and for free, in whatever currency they choose, and exercise them to take the real coin out. If a maker fails to deliver, a share of its stake goes to the holder, and anyone may deliver in its place. Nothing is wrapped and nobody holds custody.</p>
   <p>One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: every block runs a fee-weighted lottery over entries written to Bitcoin itself, and each winning entry commits to the log, which is how the log is finalized.</p>
 
   <div class="links">
     <a href="/"><b>App</b><span>A wallet: create a passkey, deposit, send in any currency, withdraw. Pro mode has the book and charts.</span></a>
-    <a href="/docs/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, options, cover.</span></a>
+    <a href="/docs/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, options, stake.</span></a>
     <a href="https://github.com/masonforest/bollard"><b>Source</b><span>The node, in Rust. One binary and a Postgres database.</span></a>
     <a href="https://mainnet.bollard.exchange/status"><b>API</b><span>mainnet.bollard.exchange: JSON and server-sent events.</span></a>
   </div>
@@ -39,8 +39,10 @@ GENESIS_LEADER_URL=http://45.77.101.95 bollard run</code></pre>
   <p>A node follows the leader by default. To stand for leader, send a little bitcoin to the node's address and run <code>bollard enter --fee &lt;sats&gt;</code>. The fee is the entry's weight in the draw.</p>
 
   <h2>Make a market</h2>
-  <pre><code># issue 1 BTC of options, locking 10 BLRD as cover
-bollard tx mint --asset btc:BTC --quantity 100000000 --bond 1000000000
+  <pre><code># stake 10 BLRD; one pool backs everything you issue
+bollard tx stake --amount 1000000000
+# issue 1 BTC of options
+bollard tx mint --asset btc:BTC --quantity 100000000
 # sell them for on-chain bitcoin; every claim gets its own address from the xpub
 bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 \
   --price 100000000 --receive-address xpub... --expiry-height 980000

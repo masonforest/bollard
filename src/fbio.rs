@@ -50,7 +50,9 @@ pub enum TxBody {
         leg: u8,
         txid: String,
     },
-    Mint { asset: String, quantity: u64, bond: u64 },
+    Mint { asset: String, quantity: u64 },
+    Stake { amount: u64 },
+    Unstake { amount: u64 },
     Burn { asset: String, quantity: u64 },
     Send {
         #[serde(serialize_with = "hex_bytes")]
@@ -126,6 +128,8 @@ impl ParsedEntry {
                 TxBody::Send { .. } => "Send",
                 TxBody::Exercise { .. } => "Exercise",
                 TxBody::SetCurrency { .. } => "SetCurrency",
+                TxBody::Stake { .. } => "Stake",
+                TxBody::Unstake { .. } => "Unstake",
             },
             Body::EpochStart { .. } => "EpochStart",
             Body::ClaimExpired { .. } => "ClaimExpired",
@@ -191,10 +195,12 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let args = fb::ReportPaymentArgs { match_id: Some(m), leg: *leg, txid: Some(t) };
             (fb::TxBody::ReportPayment, fb::ReportPayment::create(&mut b, &args).as_union_value())
         }
-        TxBody::Mint { asset, quantity, bond } => {
+        TxBody::Mint { asset, quantity } => {
             let a = b.create_string(asset);
-            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity, bond: *bond }).as_union_value())
+            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity }).as_union_value())
         }
+        TxBody::Stake { amount } => (fb::TxBody::Stake, fb::Stake::create(&mut b, &fb::StakeArgs { amount: *amount }).as_union_value()),
+        TxBody::Unstake { amount } => (fb::TxBody::Unstake, fb::Unstake::create(&mut b, &fb::UnstakeArgs { amount: *amount }).as_union_value()),
         TxBody::Burn { asset, quantity } => {
             let a = b.create_string(asset);
             (fb::TxBody::Burn, fb::Burn::create(&mut b, &fb::BurnArgs { asset: Some(a), quantity: *quantity }).as_union_value())
@@ -264,8 +270,10 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
         }
         fb::TxBody::Mint => {
             let t = tx.body_as_mint().ok_or_else(|| anyhow!("bad Mint"))?;
-            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), bond: t.bond() }
+            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
         }
+        fb::TxBody::Stake => TxBody::Stake { amount: tx.body_as_stake().ok_or_else(|| anyhow!("bad Stake"))?.amount() },
+        fb::TxBody::Unstake => TxBody::Unstake { amount: tx.body_as_unstake().ok_or_else(|| anyhow!("bad Unstake"))?.amount() },
         fb::TxBody::Burn => {
             let t = tx.body_as_burn().ok_or_else(|| anyhow!("bad Burn"))?;
             TxBody::Burn { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
