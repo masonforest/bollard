@@ -51,6 +51,8 @@ li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; 
 li .sub { display: block; color: var(--muted); font-size: 13px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
 .qr svg { display: block; width: 180px; border-radius: 8px; background: #fff; }
+.qr.big svg { width: min(320px, 100%); }
+.ok { color: var(--ok); }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 2px; padding: 0 16px; padding-top: env(safe-area-inset-top); }
@@ -86,7 +88,7 @@ input.mono { font-size: 16px; }
 <nav hidden></nav>
 <main></main>
 <script type="module">
-import { TxType, hex, signers, submit, createPasskey, signInPasskey } from '/dashboard/wire.js';
+import { TxType, hex, signers, submit, createPasskey, signInPasskey, randomSecret, pubkeyOf } from '/dashboard/wire.js';
 
 // ----- node -----
 const BASE_DOMAIN = location.hostname.replace(/^(app|www)\./, '');
@@ -158,7 +160,20 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
+  magicQr: () => { state.magic.qr = !state.magic.qr; render(); },
+  dismissAccept: () => { state.accept = null; history.replaceState(null, '', location.pathname); render(); },
+  accept: () => run(async () => {
+    const a = state.accept; const signer = signers.secret(a.secret);
+    let got = [];
+    for (const x of a.assets.filter((x) => x.amount > 0)) {
+      await submit(api, signer, TxType.Send, { to: hex.dec(me()), asset: x.asset, amount: BigInt(x.amount) });
+      got.push(money(x.amount, x.asset));
+    }
+    state.accept = null; history.replaceState(null, '', location.pathname);
+    state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
+    await refresh();
+  }),
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; state.sent = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
   depositAsset: (el) => { state.deposit = { asset: el.dataset.value }; loadDeposit(); render(); },
@@ -172,7 +187,17 @@ const forms = {
     const amount = toAtoms(form.amount.value, asset);
     if (amount <= 0n) throw new Error('Enter an amount.');
     await tx(TxType.Send, { to: hex.dec(to), asset, amount });
-    state.success = `Sent ${money(amount, asset)}`; state.view = 'home';
+    state.sent = `Sent ${money(amount, asset)} to ${short(to, 12)}`;
+    await refresh();
+  }),
+  // Magic link, as on bitcoin.dance: fund a throwaway key and share a link that carries it. Whoever opens the link accepts the money.
+  magic: (form) => run(async () => {
+    const asset = currency();
+    const amount = toAtoms(form.amount.value, asset);
+    if (amount <= 0n) throw new Error('Enter an amount.');
+    const secret = randomSecret();
+    await tx(TxType.Send, { to: pubkeyOf(secret), asset, amount });
+    state.magic = { link: `${location.origin}/#magic/${secret}`, amount: money(amount, asset), qr: false };
     await refresh();
   }),
   withdraw: (form) => run(async () => {
@@ -234,9 +259,21 @@ function render() {
       </div>`;
     return;
   }
-  const v = views[state.view] || views.home;
+  const v = state.accept ? acceptView : (views[state.view] || views.home);
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + ['home', 'send', 'receive', 'deposit', 'withdraw', 'activity', 'settings'].map((t) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['send', 'Send'], ['magic', 'Magic Link'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'Activity'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+}
+// Opening a magic link: show what it carries and let the viewer accept it into their own account.
+function acceptView() {
+  const a = state.accept;
+  if (a.error) return `<h2>Sending…</h2><p class="error center">${esc(a.error)}</p>`;
+  if (!a.assets) return `<h2>Sending…</h2><p class="center muted"><span class="spinner"></span>Looking up the link…</p>`;
+  const total = a.assets.filter((x) => x.amount > 0);
+  if (!total.length) return `<h2>Sending…</h2><p class="center muted">This link has already been accepted.</p><button class="link" data-action="dismissAccept">Back</button>`;
+  return `<h2>Sending…</h2><div class="stack center">
+    <button class="primary" data-action="accept" style="font-size:20px;padding:16px 28px" ${state.busy ? 'disabled' : ''}>Accept ${total.map((x) => money(x.amount, x.asset)).join(' + ')}</button>
+    <p class="muted center">It lands in your account as ${NAMES[currency()] || currency()}.</p>
+    <button class="link" data-action="dismissAccept">Not now</button></div>`;
 }
 const views = {
   home: () => {
@@ -247,26 +284,36 @@ const views = {
       <div class="stack center">
         <h1>${money(balanceOf(c), c)}</h1>
       </div>
-      <div class="row fill"><button class="primary" data-action="tab" data-value="send">Send</button><button data-action="tab" data-value="receive">Receive</button></div>
+      <div class="row fill"><button class="primary" data-action="tab" data-value="send">Send</button><button data-action="tab" data-value="magic">Magic Link</button></div>
       ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
 `;
   },
   send: () => `
-    <h2>Send ${assets[currency()]?.symbol || ''}</h2>
+    <p class="mono muted center">${me()}</p>
+    <h2>Balance: ${money(balanceOf(currency()), currency())}</h2>
     <form data-form="send" class="stack">
-      <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
-      <div class="field"><span class="label">To (account id)</span><input name="to" class="mono" placeholder="paste their account id" autocomplete="off" spellcheck="false" required></div>
-      <p class="muted">Available: ${money(balanceOf(currency()), currency())}. Arrives instantly, in their currency.</p>
+      <div class="field"><span class="label">Address</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
+      <div class="field"><span class="label">Amount</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
       <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Send</button>
+      ${state.sent ? `<p class="center ok">${esc(state.sent)}</p>` : ''}
     </form>`,
-  receive: () => `
-    <h2>Receive</h2>
-    <div class="stack center">
-      <div class="qr">${qrSvg(me())}</div>
-      <p class="mono">${me()}</p>
-      <button data-action="copy" data-text="${me()}" data-label="Copy account id">Copy account id</button>
-      <p class="muted center">Share this id. Whatever they send arrives as ${NAMES[currency()] || currency()}. To bring in coins from a chain, use Deposit.</p>
-    </div>`,
+  magic: () => {
+    const m = state.magic;
+    return `
+    <p class="mono muted center">${me()}</p>
+    <h2>Balance: ${money(balanceOf(currency()), currency())}</h2>
+    <form data-form="magic" class="stack">
+      <div class="field"><span class="label">Amount</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
+      <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Create Magic Payment Link</button>
+    </form>
+    ${m ? `
+    <div class="stack">
+      <input class="mono" value="${esc(m.link)}" readonly onclick="this.select()">
+      <div class="row fill"><button data-action="copy" data-text="${esc(m.link)}" data-label="Copy to Clipboard">Copy to Clipboard</button><button data-action="magicQr">${m.qr ? 'Hide QR Code' : 'Show QR Code'}</button></div>
+      ${m.qr ? `<div class="stack center"><p class="muted">Sending ${esc(m.amount)}…</p><div class="qr big">${qrSvg(m.link)}</div></div>` : ''}
+      <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it however you like.</p>
+    </div>` : ''}`;
+  },
   deposit: () => {
     const d = state.deposit || { asset: currency() };
     const a = assets[d.asset];
@@ -345,6 +392,15 @@ main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.
 (async () => {
   if (api) { try { const r = await fetch(api + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) api = ''; } catch { api = ''; } }
   const m = await j('/markets'); for (const a of m.assets) assets[a.id] = a;
+  const magic = location.hash.match(/^#magic\/([0-9a-f]{64})$/);
+  if (magic) {
+    state.accept = { secret: magic[1] };
+    render();
+    try {
+      const b = await j(`/balances/${hex.enc(pubkeyOf(magic[1]))}`);
+      state.accept.assets = [...(b.assets || []), ...(b.blrd > 0 ? [{ asset: 'BLRD', amount: b.blrd }] : [])];
+    } catch (e) { state.accept.error = e.message; }
+  }
   render();
   try { await refresh(); } catch (e) { state.error = e.message; render(); }
   const es = new EventSource(api + '/events');
