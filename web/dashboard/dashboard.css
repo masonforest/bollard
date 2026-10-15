@@ -121,3 +121,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Embedded in the wallet: no header of its own. */
 body.embedded .bar { display: none; }
 body.embedded main.wide { padding-top: 16px; }
+
+/* Simple buy/sell card */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; margin-bottom: 14px; background: var(--bg); }
+.seg button { font: inherit; font-size: 15px; font-weight: 600; border: 0; background: none; color: var(--muted); padding: 7px 22px; border-radius: 999px; cursor: pointer; }
+.seg button.on { background: var(--fg); color: var(--bg); }
+#s-amount { font-size: 34px; font-weight: 600; border: 0; background: none; color: var(--fg); width: 100%; outline: none; padding: 4px 0; min-width: 0; }

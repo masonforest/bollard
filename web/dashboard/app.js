@@ -143,7 +143,7 @@ function renderPicker() {
   for (const b of $('p-chains').children) b.classList.toggle('on', b.dataset.chain === pickerChain);
   const q = $('p-search').value.trim().toLowerCase();
   const current = pickerFor ? $(pickerFor).value : '';
-  const list = Object.values(assets).filter((a) => !(pickerFor === 'm-base-asset' && a.id === 'eth:USDC') && (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
+  const list = Object.values(assets).filter((a) => a.id !== 'eth:USDC' && (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
   $('p-popular').replaceChildren(...list.slice(0, 4).map((a) => { const b = document.createElement('button'); b.innerHTML = `${coinIcon(a)}${a.symbol}`; b.onclick = () => choose(a.id); return b; }));
   $('p-list').replaceChildren(...list.map((a) => {
     const b = document.createElement('button'); b.className = 'token-row' + (a.id === current ? ' on' : '');
@@ -153,6 +153,52 @@ function renderPicker() {
   if (!list.length) $('p-list').innerHTML = '<div class="picker-label">Nothing matches.</div>';
 }
 function currentMarket() { return `${$('m-base-asset').value}/eth:USDC`; }
+// ------------------------------------------------------------------ simple: buy or sell for dollars
+let side = 'buy'; let simpleTimer = null; let plan = null; // plan: { fills: [{order, qty}], quote, short }
+const USDC = 'eth:USDC';
+function setSide(v) { side = v; $('s-buy').classList.toggle('on', v === 'buy'); $('s-sell').classList.toggle('on', v === 'sell'); scheduleSimple(); }
+$('s-buy').onclick = () => setSide('buy'); $('s-sell').onclick = () => setSide('sell');
+$('s-amount').addEventListener('input', scheduleSimple);
+$('s-asset').addEventListener('input', scheduleSimple);
+function scheduleSimple() { clearTimeout(simpleTimer); simpleTimer = setTimeout(computeSimple, 200); }
+async function computeSimple() {
+  plan = null; $('s-error').textContent = '';
+  const asset = $('s-asset').value; const a = assets[asset]; if (!a) return;
+  $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`;
+  let qty; try { qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
+  if (qty <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
+  const b = await j(`/book?market=${encodeURIComponent(asset + '/' + USDC)}`);
+  // Buying takes asks, cheapest first; selling takes bids, highest first.
+  const orders = side === 'buy' ? [...(b.asks || [])].sort((x, y) => x.price - y.price) : [...(b.bids || [])].sort((x, y) => y.price - x.price);
+  let left = qty, quote = 0n; const fills = [];
+  for (const o of orders) { if (left <= 0n) break; const take = left < BigInt(o.qty_left) ? left : BigInt(o.qty_left); fills.push({ order: o, qty: take }); quote += quoteAmount(take, o.price); left -= take; }
+  if (!fills.length) { $('s-quote').textContent = `Nobody is ${side === 'buy' ? 'selling' : 'buying'} ${a.symbol} right now.`; $('s-go').disabled = true; return; }
+  plan = { fills, quote, short: left };
+  const have = side === 'buy' ? quote : qty; const haveAsset = side === 'buy' ? USDC : asset;
+  const mine = myBalance(haveAsset);
+  const avg = fills.length ? Number(quote) / Number(qty - left) * 1e8 : 0;
+  $('s-quote').innerHTML = `${side === 'buy' ? 'You pay' : 'You get'} <b>${fromAtoms(quote, USDC)}</b>` + (left > 0n ? ` for ${fromAtoms(qty - left, asset)}; only that much is on the book` : '') + ` · ${fmt(priceToHuman(BigInt(Math.round(avg)), asset, USDC), 6)} USDC/${a.symbol}` + (mine !== null && mine < have ? ` · you have ${fromAtoms(mine, haveAsset)}` : '');
+  $('s-go').disabled = !me() || (mine !== null && mine < have);
+}
+let balances = null;
+function myBalance(asset) { if (!balances) return null; return asset === 'BLRD' ? BigInt(balances.blrd || 0) : BigInt(balances.assets?.find((x) => x.asset === asset)?.amount || 0); }
+$('s-go').onclick = async () => {
+  if (!plan) return; $('s-error').textContent = ''; $('s-result').textContent = ''; $('s-go').disabled = true;
+  const asset = $('s-asset').value; const a = assets[asset];
+  try {
+    ensureKey();
+    let got = 0n, paid = 0n;
+    for (const f of plan.fills) {
+      await send(api, null, TxType.Claim, { order_id: hex.dec(f.order.id), quantity: f.qty, receive_address: '' });
+      got += f.qty; paid += quoteAmount(f.qty, f.order.price);
+    }
+    $('s-result').textContent = side === 'buy' ? `Bought ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}.` : `Sold ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}.`;
+    $('s-amount').value = ''; plan = null; $('s-quote').textContent = 'Enter an amount.';
+    renderAccount(); 
+  } catch (e) { $('s-error').textContent = e.message; $('s-go').disabled = false; }
+};
+async function loadSimple() { if (me()) balances = await j(`/balances/${me()}`).catch(() => null); renderTokenButtons(); computeSimple(); }
+
 // ------------------------------------------------------------------ pro mode
 let chart = null, candles = null, chartMarket = null;
 function chartColors() {
@@ -295,8 +341,10 @@ for (const id of ['m-base-asset', 'm-quote-asset']) $(id).addEventListener('inpu
   await loadMarkets();
   await loadStatus();
   renderAccount();
-  loadPro(); setTimeout(fitChart, 0);
+  $('simple').classList.toggle('hidden', advanced()); $('pro').classList.toggle('hidden', !advanced());
+  const tick = () => (advanced() ? loadPro() : loadSimple());
+  tick(); if (advanced()) setTimeout(fitChart, 0);
   const es = new EventSource(api + '/events');
-  es.onmessage = (m) => { try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event === 'Entry') { loadStatus(); return; } loadPro(); } catch {} };
-  setInterval(() => { loadStatus(); loadPro(); }, 20000);
+  es.onmessage = (m) => { try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event === 'Entry') { loadStatus(); return; } tick(); } catch {} };
+  setInterval(() => { loadStatus(); tick(); }, 20000);
 })();
