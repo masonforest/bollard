@@ -107,51 +107,28 @@ function coinIcon(a, large = false) {
   const net = a.chain === 'blrd' ? '' : `<span class="net c-${a.chain}">${a.chain === 'btc' ? '₿' : 'Ξ'}</span>`;
   return `<span class="coin ${large ? 'lg ' : ''}${coinClass(a)}">${a.symbol[0]}${net}</span>`;
 }
-// Two autocompletes with logos: the network first, then the token on it. Writes the
-// chosen asset id into the hidden input named by data-pick and fires its input event.
+// Two horizontal rows of logo chips: the network first, then the token on it.
+// The token row hides when the network has only one token. Writes the chosen
+// asset id into the hidden input named by data-pick and fires its input event.
 const chainIcon = (c) => `<span class="coin c-${c}">${(CHAIN_NAMES[c] || c)[0]}</span>`;
 function buildPickers() {
   for (const root of document.querySelectorAll('.pickers')) {
     const target = $(root.dataset.pick);
     const all = () => Object.values(assets).filter((a) => a.id !== 'eth:USDC');
     const chains = () => [...new Set(all().map((a) => a.chain))];
-    root.innerHTML = `
-      <div class="ac" data-ac="chain"><span class="lbl">Network</span><div class="ac-field"><span class="ic"></span><input autocomplete="off" spellcheck="false" placeholder="Network"></div><ul class="ac-list hidden"></ul></div>
-      <div class="ac" data-ac="token"><span class="lbl">Token</span><div class="ac-field"><span class="ic"></span><input autocomplete="off" spellcheck="false" placeholder="Token"></div><ul class="ac-list hidden"></ul></div>`;
-    const [cAc, tAc] = root.querySelectorAll('.ac');
-    const chainOf = () => assets[target.value]?.chain || chains()[0];
     const show = () => {
-      const c = chainOf(); const a = assets[target.value];
-      cAc.querySelector('.ic').innerHTML = chainIcon(c); cAc.querySelector('input').value = CHAIN_NAMES[c] || c;
-      tAc.querySelector('.ic').innerHTML = a ? coinIcon(a) : ''; tAc.querySelector('input').value = a ? a.symbol : '';
+      const cur = assets[target.value]; const c = cur?.chain || chains()[0];
+      const tokens = all().filter((a) => a.chain === c);
+      root.innerHTML = `
+        <div class="chiprow" data-row="chain">${chains().map((ch) => `<button type="button" class="chip-opt ${ch === c ? 'on' : ''}" data-chain="${ch}">${chainIcon(ch)}<span>${CHAIN_NAMES[ch] || ch}</span></button>`).join('')}</div>
+        <div class="chiprow ${tokens.length > 1 ? '' : 'hidden'}" data-row="token">${tokens.map((a) => `<button type="button" class="chip-opt ${a.id === target.value ? 'on' : ''}" data-asset="${a.id}">${coinIcon(a)}<span>${a.symbol}</span></button>`).join('')}</div>`;
     };
     const pick = (id) => { target.value = id; show(); target.dispatchEvent(new Event('input', { bubbles: true })); };
-    const wire = (ac, items, label, icon, onPick) => {
-      const inp = ac.querySelector('input'); const list = ac.querySelector('.ac-list'); let hl = 0;
-      const open = (filter) => {
-        const q = (filter ?? '').trim().toLowerCase();
-        const rows = items().filter((it) => !q || label(it).toLowerCase().includes(q) || (it.symbol || '').toLowerCase().includes(q) || (it.id || '').toLowerCase().includes(q));
-        hl = 0;
-        list.innerHTML = rows.length ? rows.map((it, i) => `<li data-i="${i}" class="${i === hl ? 'hl' : ''}">${icon(it)}<span>${label(it)}</span>${it.symbol ? `<span class="sym">${it.symbol}</span>` : ''}</li>`).join('') : '<li class="none">Nothing matches.</li>';
-        list.classList.remove('hidden');
-        list.onmousedown = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); onPick(rows[Number(li.dataset.i)]); close(); };
-        list.rows = rows;
-      };
-      const close = () => { list.classList.add('hidden'); show(); };
-      inp.onfocus = () => { inp.select(); open(''); };
-      inp.oninput = () => open(inp.value);
-      inp.onblur = () => setTimeout(close, 120);
-      inp.onkeydown = (e) => {
-        const rows = list.rows || [];
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hl = (hl + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % Math.max(rows.length, 1); [...list.children].forEach((li, i) => li.classList.toggle('hl', i === hl)); }
-        else if (e.key === 'Enter') { e.preventDefault(); if (rows[hl]) { onPick(rows[hl]); inp.blur(); } }
-        else if (e.key === 'Escape') inp.blur();
-      };
+    root.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.asset) pick(b.dataset.asset);
+      else if (b.dataset.chain && assets[target.value]?.chain !== b.dataset.chain) { const first = all().find((a) => a.chain === b.dataset.chain); if (first) pick(first.id); }
     };
-    wire(cAc, () => chains().map((c) => ({ id: c, name: CHAIN_NAMES[c] || c })), (c) => c.name, (c) => chainIcon(c.id), (c) => {
-      if (assets[target.value]?.chain !== c.id) { const first = all().find((a) => a.chain === c.id); if (first) pick(first.id); }
-    });
-    wire(tAc, () => all().filter((a) => a.chain === chainOf()), (a) => ASSET_NAMES[a.id] || a.symbol, (a) => coinIcon(a), (a) => pick(a.id));
     root.show = show; show();
   }
 }
