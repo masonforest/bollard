@@ -179,6 +179,7 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
+  advanced: (el) => { try { localStorage.setItem('bollard.advanced', el.dataset.value); } catch {} render(); },
   share: (el) => shareLink(el.dataset.link),
   qr: (el) => { state.qr = el.dataset.link; render(); },
   closeqr: () => { state.qr = null; render(); },
@@ -286,6 +287,7 @@ function sendFrom() {
   const asset = state.from?.asset && onChain.some((h) => h.asset === state.from.asset) ? state.from.asset : onChain[0].asset;
   return { chain, asset };
 }
+const advanced = () => { try { return localStorage.getItem('bollard.advanced') === '1'; } catch { return false; } };
 const balanceOf = (id) => (id === 'BLRD' ? BigInt(state.info?.blrd || 0) : BigInt(state.info?.assets?.find((a) => a.asset === id)?.amount || 0));
 
 function render() {
@@ -414,11 +416,13 @@ const views = {
       <span class="label">Your currency</span>
       <div class="row">${Object.values(assets).map((x) => `<button class="pill ${x.id === currency() ? 'primary' : ''}" data-action="currency" data-value="${x.id}">${NAMES[x.id] || x.id}</button>`).join('')}</div>
       <p class="muted">What you see your balance in and what you receive. Anything sent to you in another currency is converted on the way.</p>
+      <span class="label">Advanced mode</span>
+      <div class="row"><button class="pill ${advanced() ? 'primary' : ''}" data-action="advanced" data-value="1">On</button><button class="pill ${advanced() ? '' : 'primary'}" data-action="advanced" data-value="0">Off</button></div>
+      <p class="muted">Shows the price chart on the Trade tab.</p>
       <span class="label">Account</span>
       <p class="mono">${me()}</p>
       <p class="muted">Signed in with a passkey. The same passkey signs you in on your other devices.</p>
       <button data-action="signout">Sign out</button>
-      <p class="muted"><a href="/dashboard/">Pro: order book, charts, market making</a></p>
     </div>`,
 };
 

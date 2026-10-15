@@ -55,10 +55,9 @@ async function renderAccount() {
     const a = await j(`/account/${pk}`).catch(() => null);
     const bal = a ? fromAtoms(a.balance, 'BLRD') : '?';
     $('a-balance').textContent = a ? `${bal} (nonce ${a.nonce})` : '?';
-    $('my-blrd').textContent = bal;
     const b = await j(`/balances/${pk}`).catch(() => null);
     $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`)].join('') : '';
-  } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
+  } else { $('a-balance').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
 // Signed out: the page is just two buttons. Create makes and registers a passkey; Sign in asks for an existing one.
 function authError(e) { if (e?.name === 'NotAllowedError') return; $('g-error').textContent = e.message || String(e); }
@@ -92,11 +91,6 @@ async function loadStatus() {
   const r = status.role; const el = $('role');
   el.textContent = r.role === 'Leader' ? 'node is the leader' : r.role === 'Follower' ? 'following ' + r.url : r.role.toLowerCase() + (r.reason ? ': ' + r.reason : '');
   el.className = 'pill' + (r.role === 'Leader' ? ' leader' : '');
-  $('height').textContent = status.bitcoin ? status.bitcoin.height.toLocaleString() : '–';
-  $('head').textContent = status.head.seq.toLocaleString();
-  $('leader').textContent = status.epoch ? status.epoch.leader_key_hash : '–';
-  $('open-orders').textContent = status.counts.open_orders;
-  $('open-matches').textContent = status.counts.open_matches;
 }
 
 async function loadMarkets() {
@@ -177,7 +171,10 @@ function ensureChart() {
   candles = chart.addCandlestickSeries({ upColor: '#1a7f37', downColor: '#b42318', borderVisible: false, wickUpColor: '#1a7f37', wickDownColor: '#b42318' });
 }
 function fitChart() { if (chart) chart.timeScale().fitContent(); }
+const advanced = () => { try { return localStorage.getItem('bollard.advanced') === '1'; } catch { return false; } };
 async function loadChart() {
+  $('chart-wrap').classList.toggle('hidden', !advanced());
+  if (!advanced()) return;
   ensureChart(); if (!chart) return;
   const market = currentMarket(); if (!market || marketProblem()) return;
   const [base, q] = market.split('/');
