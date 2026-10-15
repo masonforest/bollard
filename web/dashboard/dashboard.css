@@ -75,8 +75,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .c-btc { background: #f7931a; } .c-eth { background: #627eea; } .c-blrd { background: #1f5fbf; } .c-usdc { background: #2775ca; } .c-usdt { background: #26a17b; }
 
 /* network + token autocompletes */
-.pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.pickers.one { grid-template-columns: 1fr; }
+.pickers { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 .ac { position: relative; min-width: 0; }
 .ac .lbl { display: block; color: var(--muted); font-size: 12px; margin: 0 0 4px 2px; }
 .ac-field { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 6px 10px; }
