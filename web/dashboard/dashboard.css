@@ -74,13 +74,21 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .coin.lg .net { width: 18px; height: 18px; font-size: 10px; }
 .c-btc { background: #f7931a; } .c-eth { background: #627eea; } .c-blrd { background: #1f5fbf; } .c-usdc { background: #2775ca; } .c-usdt { background: #26a17b; }
 
-/* network and token chip rows */
-.pickers { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.chiprow { display: flex; gap: 8px; flex-wrap: wrap; }
-.chip-opt { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; font-weight: 600; padding: 5px 12px 5px 5px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; }
-.chip-opt .coin { width: 26px; height: 26px; font-size: 12px; }
-.chip-opt:hover { border-color: var(--accent); }
-.chip-opt.on { color: var(--fg); border-color: var(--fg); }
+/* network + token autocompletes */
+.pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.pickers.one { grid-template-columns: 1fr; }
+.ac { position: relative; min-width: 0; }
+.ac .lbl { display: block; color: var(--muted); font-size: 12px; margin: 0 0 4px 2px; }
+.ac-field { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 6px 10px; }
+.ac-field:focus-within { border-color: var(--accent); }
+.ac-field input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--fg); outline: none; }
+.ac-field .coin { flex: none; width: 26px; height: 26px; font-size: 12px; }
+.ac-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; margin: 4px 0 0; padding: 6px; list-style: none; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.12); max-height: 260px; overflow-y: auto; }
+.ac-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.ac-list li:hover, .ac-list li.hl { background: var(--card); }
+.ac-list li .sym { color: var(--muted); font-size: 13px; margin-left: auto; }
+.ac-list li .coin { width: 28px; height: 28px; font-size: 13px; }
+.ac-list .none { color: var(--muted); padding: 8px 10px; }
 .small.ok { border-color: #1a7f37; color: #1a7f37; }
 .manual { margin-top: 10px; }
 .manual summary { cursor: pointer; }
