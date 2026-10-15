@@ -45,13 +45,11 @@ const me = () => key?.pubkey || null;
 function setKey(k) { key = k; try { if (k) localStorage.setItem(KEY, JSON.stringify(k)); else localStorage.removeItem(KEY); } catch {} renderAccount(); }
 const signer = () => { if (!key) throw new Error('Sign in first (top right).'); return signers.passkey(key); };
 const send = (api, _unused, type, body) => submit(api, signer(), type, body);
-function ensureKey() { if (!key) { $('account').showModal(); throw new Error('Sign in first (top right).'); } return key; }
+function ensureKey() { if (!key) { signIn(); throw new Error('Sign in with your passkey, then try again.'); } return key; }
 async function renderAccount() {
   const pk = me();
   $('account-btn').textContent = pk ? short(pk, 12) : 'Sign in';
   $('a-pub').textContent = pk || '(not signed in)';
-  $('a-signed').classList.toggle('hidden', !pk);
-  $('a-unsigned').classList.toggle('hidden', !!pk);
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
     const bal = a ? fromAtoms(a.balance, 'BLRD') : '?';
@@ -61,22 +59,23 @@ async function renderAccount() {
     $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)} (cover ${fromAtoms(x.cover, 'BLRD')})</span></div>`)].join('') : '';
   } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
-$('account-btn').onclick = () => { renderAccount(); $('account').showModal(); };
-$('a-close').onclick = () => $('account').close();
-$('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');
-$('a-create').onclick = async () => {
-  $('a-error').textContent = '';
-  try { const k = await createPasskey('Bollard'); await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) }); setKey(k); } catch (e) { $('a-error').textContent = e.message; }
-};
-$('a-signin').onclick = async () => {
-  $('a-error').textContent = '';
+// One click: the passkey prompt. An existing passkey signs in; otherwise a new one is created and registered.
+async function signIn() {
   try {
     const id = await signInPasskey();
-    const r = await fetch(`${api}/keys/${encodeURIComponent(id)}`); if (!r.ok) throw new Error('That passkey is not registered with this node.');
-    setKey({ id, pubkey: (await r.json()).pubkey });
-  } catch (e) { $('a-error').textContent = e.message; }
-};
-$('a-signout').onclick = () => { setKey(null); };
+    const r = await fetch(`${api}/keys/${encodeURIComponent(id)}`);
+    if (r.ok) { setKey({ id, pubkey: (await r.json()).pubkey }); return; }
+  } catch (e) { if (e.name !== 'NotAllowedError') { alert(e.message); return; } }
+  try {
+    const k = await createPasskey('Bollard');
+    await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) });
+    setKey(k);
+  } catch (e) { if (e.name !== 'NotAllowedError') alert(e.message); }
+}
+$('account-btn').onclick = () => { if (!key) { signIn(); return; } renderAccount(); $('account').showModal(); };
+$('a-close').onclick = () => $('account').close();
+$('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');
+$('a-signout').onclick = () => { setKey(null); $('account').close(); };
 
 // ------------------------------------------------------------------ modes
 const MODE = 'bollard.mode';
@@ -479,7 +478,7 @@ async function loadMatches() {
   const ms = await j('/matches?status=open&limit=50');
   $('matches').replaceChildren(...ms.map((m) => {
     const tr = document.createElement('tr'); const [base, q] = m.market.split('/');
-    tr.innerHTML = `<td class="mono">${short(m.id)}</td><td>${m.market}</td><td class="num">${fromAtoms(m.quantity, base)}</td><td class="num">${fmt(priceToHuman(m.price, base, q))}</td><td>${legText(m.taker_txid, m.taker_included_height)}</td><td>${m.maker_chain === 'blrd' ? 'ledger' : legText(m.maker_txid, m.maker_included_height)}</td><td>${new Date(m.claimed_ts).toLocaleString()}</td>`;
+    tr.innerHTML = `<td class="mono">${short(m.id)}</td><td>${m.market}</td><td class="num">${fromAtoms(m.quantity, base)}</td><td class="num">${q ? fmt(priceToHuman(m.price, base, q)) : m.kind}</td><td>${legText(m.taker_txid, m.taker_included_height)}</td><td>${m.maker_chain === 'blrd' ? 'ledger' : legText(m.maker_txid, m.maker_included_height)}</td><td>${new Date(m.claimed_ts).toLocaleString()}</td>`;
     return tr;
   }));
   if (!ms.length) $('matches').innerHTML = '<tr><td colspan="7" class="muted">none</td></tr>';
