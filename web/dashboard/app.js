@@ -96,8 +96,7 @@ async function loadStatus() {
 async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
-  renderTokenButtons();
-  buildPicker();
+  buildPickers();
 }
 
 // ------------------------------------------------------------------ coins and the token picker
@@ -108,50 +107,56 @@ function coinIcon(a, large = false) {
   const net = a.chain === 'blrd' ? '' : `<span class="net c-${a.chain}">${a.chain === 'btc' ? '₿' : 'Ξ'}</span>`;
   return `<span class="coin ${large ? 'lg ' : ''}${coinClass(a)}">${a.symbol[0]}${net}</span>`;
 }
-function renderTokenButtons() {
-  for (const btn of document.querySelectorAll('.token-btn')) {
-    const a = assets[$(btn.dataset.for).value];
-    if (!a) continue;
-    btn.innerHTML = `${coinIcon(a)}<span>${a.symbol}<br><span class="sub">${CHAIN_NAMES[a.chain] || a.chain}</span></span><span class="chev">▾</span>`;
+// Two autocompletes with logos: the network first, then the token on it. Writes the
+// chosen asset id into the hidden input named by data-pick and fires its input event.
+const chainIcon = (c) => `<span class="coin c-${c}">${(CHAIN_NAMES[c] || c)[0]}</span>`;
+function buildPickers() {
+  for (const root of document.querySelectorAll('.pickers')) {
+    const target = $(root.dataset.pick);
+    const all = () => Object.values(assets).filter((a) => a.id !== 'eth:USDC');
+    const chains = () => [...new Set(all().map((a) => a.chain))];
+    root.innerHTML = `
+      <div class="ac" data-ac="chain"><span class="lbl">Network</span><div class="ac-field"><span class="ic"></span><input autocomplete="off" spellcheck="false" placeholder="Network"></div><ul class="ac-list hidden"></ul></div>
+      <div class="ac" data-ac="token"><span class="lbl">Token</span><div class="ac-field"><span class="ic"></span><input autocomplete="off" spellcheck="false" placeholder="Token"></div><ul class="ac-list hidden"></ul></div>`;
+    const [cAc, tAc] = root.querySelectorAll('.ac');
+    const chainOf = () => assets[target.value]?.chain || chains()[0];
+    const show = () => {
+      const c = chainOf(); const a = assets[target.value];
+      cAc.querySelector('.ic').innerHTML = chainIcon(c); cAc.querySelector('input').value = CHAIN_NAMES[c] || c;
+      tAc.querySelector('.ic').innerHTML = a ? coinIcon(a) : ''; tAc.querySelector('input').value = a ? a.symbol : '';
+    };
+    const pick = (id) => { target.value = id; show(); target.dispatchEvent(new Event('input', { bubbles: true })); };
+    const wire = (ac, items, label, icon, onPick) => {
+      const inp = ac.querySelector('input'); const list = ac.querySelector('.ac-list'); let hl = 0;
+      const open = (filter) => {
+        const q = (filter ?? '').trim().toLowerCase();
+        const rows = items().filter((it) => !q || label(it).toLowerCase().includes(q) || (it.symbol || '').toLowerCase().includes(q) || (it.id || '').toLowerCase().includes(q));
+        hl = 0;
+        list.innerHTML = rows.length ? rows.map((it, i) => `<li data-i="${i}" class="${i === hl ? 'hl' : ''}">${icon(it)}<span>${label(it)}</span>${it.symbol ? `<span class="sym">${it.symbol}</span>` : ''}</li>`).join('') : '<li class="none">Nothing matches.</li>';
+        list.classList.remove('hidden');
+        list.onmousedown = (e) => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); onPick(rows[Number(li.dataset.i)]); close(); };
+        list.rows = rows;
+      };
+      const close = () => { list.classList.add('hidden'); show(); };
+      inp.onfocus = () => { inp.select(); open(''); };
+      inp.oninput = () => open(inp.value);
+      inp.onblur = () => setTimeout(close, 120);
+      inp.onkeydown = (e) => {
+        const rows = list.rows || [];
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hl = (hl + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % Math.max(rows.length, 1); [...list.children].forEach((li, i) => li.classList.toggle('hl', i === hl)); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (rows[hl]) { onPick(rows[hl]); inp.blur(); } }
+        else if (e.key === 'Escape') inp.blur();
+      };
+    };
+    wire(cAc, () => chains().map((c) => ({ id: c, name: CHAIN_NAMES[c] || c })), (c) => c.name, (c) => chainIcon(c.id), (c) => {
+      if (assets[target.value]?.chain !== c.id) { const first = all().find((a) => a.chain === c.id); if (first) pick(first.id); }
+    });
+    wire(tAc, () => all().filter((a) => a.chain === chainOf()), (a) => ASSET_NAMES[a.id] || a.symbol, (a) => coinIcon(a), (a) => pick(a.id));
+    root.show = show; show();
   }
 }
-// ---- token picker: search, chain chips, popular, full list
-let pickerFor = null, pickerChain = 'all';
-function buildPicker() {
-  const chips = $('p-chains'); chips.innerHTML = '';
-  const allBtn = document.createElement('button'); allBtn.textContent = 'All'; allBtn.dataset.chain = 'all'; chips.appendChild(allBtn);
-  for (const c of [...new Set(Object.values(assets).map((a) => a.chain))]) {
-    const b = document.createElement('button'); b.dataset.chain = c; b.title = CHAIN_NAMES[c] || c;
-    b.innerHTML = `<span class="coin c-${c}" style="width:22px;height:22px;font-size:11px">${(CHAIN_NAMES[c] || c)[0]}</span>`;
-    chips.appendChild(b);
-  }
-  chips.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; pickerChain = b.dataset.chain; renderPicker(); };
-  $('p-search').oninput = renderPicker;
-  $('p-close').onclick = () => $('picker').close();
-  for (const btn of document.querySelectorAll('.token-btn')) btn.onclick = () => openPicker(btn.dataset.for);
-  $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) $('picker').close(); });
-}
-function openPicker(forId) {
-  pickerFor = forId; pickerChain = 'all'; $('p-search').value = '';
-  renderPicker(); $('picker').showModal(); $('p-search').focus();
-}
-function choose(id) {
-  const inp = $(pickerFor); inp.value = id; $('picker').close();
-  renderTokenButtons(); inp.dispatchEvent(new Event('input', { bubbles: true }));
-}
-function renderPicker() {
-  for (const b of $('p-chains').children) b.classList.toggle('on', b.dataset.chain === pickerChain);
-  const q = $('p-search').value.trim().toLowerCase();
-  const current = pickerFor ? $(pickerFor).value : '';
-  const list = Object.values(assets).filter((a) => a.id !== 'eth:USDC' && (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
-  $('p-popular').replaceChildren(...list.slice(0, 4).map((a) => { const b = document.createElement('button'); b.innerHTML = `${coinIcon(a)}${a.symbol}`; b.onclick = () => choose(a.id); return b; }));
-  $('p-list').replaceChildren(...list.map((a) => {
-    const b = document.createElement('button'); b.className = 'token-row' + (a.id === current ? ' on' : '');
-    b.innerHTML = `${coinIcon(a, true)}<span><div class="name">${ASSET_NAMES[a.id] || a.symbol}</div><div class="sym">${a.symbol}</div></span><span class="right">${CHAIN_NAMES[a.chain] || a.chain}${a.contract ? ' · ' + a.contract.slice(0, 6) + '…' + a.contract.slice(-4) : ''}</span>`;
-    b.onclick = () => choose(a.id); return b;
-  }));
-  if (!list.length) $('p-list').innerHTML = '<div class="picker-label">Nothing matches.</div>';
-}
+function renderTokenButtons() { for (const root of document.querySelectorAll('.pickers')) root.show?.(); }
+
 function currentMarket() { return `${$('m-base-asset').value}/eth:USDC`; }
 // ------------------------------------------------------------------ simple: buy or sell for dollars
 let side = 'buy'; let simpleTimer = null; let plan = null; // plan: { fills: [{order, qty}], quote, short } or { deposit: order, qty }
@@ -166,7 +171,7 @@ function scheduleSimple() { clearTimeout(simpleTimer); simpleTimer = setTimeout(
 async function computeSimple() {
   plan = null; $('s-error').textContent = '';
   const asset = $('s-asset').value; const a = assets[asset]; if (!a) return;
-  $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`;
+  $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`; $('s-unit').textContent = a.symbol;
   let qty; try { qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
   if (qty <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
   const b = await j(`/book?market=${encodeURIComponent(asset + '/' + USDC)}`);

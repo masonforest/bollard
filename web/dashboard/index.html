@@ -35,10 +35,12 @@
   <section id="simple" class="hidden">
     <div class="swap">
       <div class="seg" role="tablist"><button type="button" id="s-buy" class="on" role="tab">Buy</button><button type="button" id="s-sell" role="tab">Sell</button></div>
+      <div class="pickers" data-pick="s-asset"></div>
+      <input type="hidden" id="s-asset" value="btc:BTC">
       <div class="box">
         <div class="box-row">
           <input id="s-amount" type="text" inputmode="decimal" placeholder="0.0" autocomplete="off">
-          <input type="hidden" id="s-asset" value="btc:BTC"><button type="button" class="token-btn" data-for="s-asset"></button>
+          <span id="s-unit" class="muted" style="font-size:18px;font-weight:600"></span>
         </div>
       </div>
       <div id="s-pay-row" class="hidden" style="margin-top:12px"><span class="muted small-text">Pay with</span> <span class="seg small" id="s-pay"><button type="button" data-pay="usdc" class="on">USDC balance</button><button type="button" data-pay="chain"></button></span></div>
@@ -56,13 +58,11 @@
 
   <section id="pro" class="hidden">
 
-    <div class="row market-row" style="margin-top:22px">
-      <span class="muted">Base</span>
-      <input type="hidden" id="m-base-asset" value="btc:BTC"><button type="button" class="token-btn" data-for="m-base-asset"></button>
-      <span class="muted">/ USDC</span>
+    <div class="market-row" style="margin-top:22px">
+      <div class="pickers" data-pick="m-base-asset"></div>
+      <input type="hidden" id="m-base-asset" value="btc:BTC">
       <input type="hidden" id="m-quote-asset" value="eth:USDC">
-      <span class="muted" id="market-note"></span>
-      <span class="muted" id="last-price"></span>
+      <div class="muted small-text" style="margin-top:6px"><span id="market-note"></span> <span id="last-price"></span></div>
     </div>
     <div id="chart-wrap" class="hidden"><div id="chart" class="chart"></div>
     <div id="chart-empty" class="muted small-text"></div></div>
@@ -97,22 +97,6 @@
     <ul id="log"></ul>
 
   </section>
-
-  <!-- ---------------------------------------------------------- token picker -->
-  <dialog id="picker" class="picker">
-    <div class="picker-head">
-      <span class="picker-search-icon">⌕</span>
-      <input id="p-search" type="text" placeholder="Search token name or symbol" autocomplete="off" spellcheck="false">
-      <button id="p-close" type="button" class="picker-x" aria-label="Close">×</button>
-    </div>
-    <div id="p-chains" class="chips"></div>
-    <div class="picker-body">
-      <div class="picker-label">Most popular</div>
-      <div id="p-popular" class="pop-row"></div>
-      <div class="picker-label">All tokens</div>
-      <div id="p-list" class="token-list"></div>
-    </div>
-  </dialog>
 
   <!-- ---------------------------------------------------------- account -->
   <dialog id="account">
