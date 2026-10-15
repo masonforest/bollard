@@ -173,23 +173,13 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; state.sent = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
   depositAsset: (el) => { state.deposit = { asset: el.dataset.value }; loadDeposit(); render(); },
   cancelDeposit: () => { state.deposit = null; render(); },
 };
 const forms = {
-  send: (form) => run(async () => {
-    const to = form.to.value.trim().toLowerCase();
-    if (!/^[0-9a-f]{66}$|^[0-9a-f]{130}$/.test(to)) throw new Error('That is not an account id.');
-    const asset = currency();
-    const amount = toAtoms(form.amount.value, asset);
-    if (amount <= 0n) throw new Error('Enter an amount.');
-    await tx(TxType.Send, { to: hex.dec(to), asset, amount });
-    state.sent = `Sent ${money(amount, asset)} to ${short(to, 12)}`;
-    await refresh();
-  }),
   // Magic link, as on bitcoin.dance: fund a throwaway key and share a link that carries it. Whoever opens the link accepts the money.
   magic: (form) => run(async () => {
     const asset = currency();
@@ -261,7 +251,7 @@ function render() {
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['send', 'Send'], ['magic', 'Magic Link'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'Activity'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['magic', 'Magic Link'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'Activity'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -284,19 +274,10 @@ const views = {
       <div class="stack center">
         <h1>${money(balanceOf(c), c)}</h1>
       </div>
-      <div class="row fill"><button class="primary" data-action="tab" data-value="send">Send</button><button data-action="tab" data-value="magic">Magic Link</button></div>
+      <div class="row fill"><button class="primary" data-action="tab" data-value="magic">Magic Link</button></div>
       ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
 `;
   },
-  send: () => `
-    <p class="mono muted center">${me()}</p>
-    <h2>Balance: ${money(balanceOf(currency()), currency())}</h2>
-    <form data-form="send" class="stack">
-      <div class="field"><span class="label">Address</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
-      <div class="field"><span class="label">Amount</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
-      <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Send</button>
-      ${state.sent ? `<p class="center ok">${esc(state.sent)}</p>` : ''}
-    </form>`,
   magic: () => {
     const m = state.magic;
     return `
@@ -311,7 +292,7 @@ const views = {
       <input class="mono" value="${esc(m.link)}" readonly onclick="this.select()">
       <div class="row fill"><button data-action="copy" data-text="${esc(m.link)}" data-label="Copy to Clipboard">Copy to Clipboard</button><button data-action="magicQr">${m.qr ? 'Hide QR Code' : 'Show QR Code'}</button></div>
       ${m.qr ? `<div class="stack center"><p class="muted">Sending ${esc(m.amount)}…</p><div class="qr big">${qrSvg(m.link)}</div></div>` : ''}
-      <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it however you like.</p>
+      <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it to them however you like.</p>
     </div>` : ''}`;
   },
   deposit: () => {
