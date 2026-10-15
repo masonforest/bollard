@@ -25,88 +25,13 @@
 <main id="app" class="wide">
   <header class="bar">
     <div class="brand"><a href="/">Bollard</a> <span class="muted">app</span></div>
-    <div class="modes" role="tablist">
-      <button id="mode-simple" class="on" role="tab">Simple</button>
-      <button id="mode-pro" role="tab">Pro</button>
-    </div>
     <div class="right">
       <span id="role" class="pill">connecting</span>
       <button id="account-btn" class="chip" title="Your account">no key</button>
     </div>
   </header>
 
-  <!-- ---------------------------------------------------------- simple -->
-  <section id="simple">
-    <div id="s-swap" class="swap hidden">
-      <div id="s-success" class="success hidden" aria-live="polite">
-        <svg viewBox="0 0 120 120" width="120" height="120"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg>
-        <div class="success-text">Swap complete</div>
-      </div>
-      <div class="swap-title">Pay the maker</div>
-      <p>Send exactly <b id="s-pay-exact"></b> to this address on <b id="s-pay-chain-name"></b>. The maker delivers once your payment is in a block (sooner if they fill on sight).</p>
-      <div class="pay-to">
-        <div id="s-qr" class="qr"></div>
-        <div class="addr-col">
-          <code id="s-pay-to" class="addr"></code>
-          <button id="s-copy" class="small">Copy address</button>
-          <div class="muted small-text">Match <code id="s-match"></code></div>
-        </div>
-      </div>
-      <div id="s-watch" class="status muted">Watching for your payment… it is picked up as soon as it reaches the mempool, nothing to paste.</div>
-      <details id="s-manual" class="manual">
-        <summary class="muted small-text">Paste a transaction id instead</summary>
-        <label class="box">
-          <span class="box-label">Your transaction id</span>
-          <div class="box-row"><input id="s-txid" type="text" placeholder="txid" autocomplete="off" spellcheck="false"></div>
-        </label>
-        <button id="s-report" class="small">Report this txid</button>
-      </details>
-      <div id="s-status" class="status"></div>
-      <button id="s-done" class="small hidden">Start another swap</button>
-    </div>
-
-    <div class="swap" id="s-card">
-      <div class="swap-title">Swap</div>
-
-      <label class="box">
-        <span class="box-label">You pay</span>
-        <div class="box-row">
-          <input id="s-pay-amount" type="text" inputmode="decimal" placeholder="0.0" autocomplete="off">
-          <input type="hidden" id="s-pay-asset" value="eth:ETH">
-          <button type="button" class="token-btn" data-for="s-pay-asset"></button>
-        </div>
-      </label>
-
-      <button id="s-flip" class="flip" title="Flip">⇅</button>
-
-      <div class="box">
-        <span class="box-label">You receive</span>
-        <div class="box-row">
-          <input id="s-get-amount" type="text" placeholder="0.0" readonly>
-          <input type="hidden" id="s-get-asset" value="btc:BTC">
-          <button type="button" class="token-btn" data-for="s-get-asset"></button>
-        </div>
-      </div>
-
-      <div id="s-quote" class="quote muted">Enter an amount.</div>
-
-      <label class="box" id="s-addr-box">
-        <span class="box-label" id="s-addr-label">Receive address</span>
-        <div class="box-row"><input id="s-addr" type="text" placeholder="your address on that chain" autocomplete="off" spellcheck="false"></div>
-      </label>
-
-      <button id="s-go" class="primary" disabled>Enter an amount</button>
-      <div id="s-error" class="error"></div>
-    </div>
-
-    <div class="swap-history">
-      <h2>Your swaps</h2>
-      <table><thead><tr><th>When</th><th>Market</th><th class="num">Quantity</th><th>You pay</th><th>You get</th><th>Status</th></tr></thead><tbody id="s-history"></tbody></table>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------- pro -->
-  <section id="pro" class="hidden">
+  <section id="pro">
     <div class="cards">
       <div class="card"><div class="k">Bitcoin height</div><div class="v" id="height">–</div></div>
       <div class="card"><div class="k">Log head</div><div class="v" id="head">–</div></div>

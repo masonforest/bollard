@@ -117,3 +117,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .gate .primary { width: min(320px, 100%); margin: 0; }
 .gate .ghost { background: none; color: var(--accent); border: 1px solid var(--accent); }
 .gate .error { min-height: 1.4em; text-align: center; }
+
+/* Embedded in the wallet: no header of its own. */
+body.embedded .bar { display: none; }
+body.embedded main.wide { padding-top: 16px; }

@@ -86,19 +86,6 @@ $('a-close').onclick = () => $('account').close();
 $('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');
 $('a-signout').onclick = () => { setKey(null); $('account').close(); };
 
-// ------------------------------------------------------------------ modes
-const MODE = 'bollard.mode';
-function setMode(m) {
-  $('simple').classList.toggle('hidden', m !== 'simple');
-  $('pro').classList.toggle('hidden', m !== 'pro');
-  $('mode-simple').classList.toggle('on', m === 'simple');
-  $('mode-pro').classList.toggle('on', m === 'pro');
-  try { localStorage.setItem(MODE, m); } catch {}
-  if (m === 'pro') { loadPro(); setTimeout(fitChart, 0); }
-}
-$('mode-simple').onclick = () => setMode('simple');
-$('mode-pro').onclick = () => setMode('pro');
-
 // ------------------------------------------------------------------ status
 async function loadStatus() {
   status = await j('/status');
@@ -119,7 +106,7 @@ async function loadMarkets() {
   buildPicker();
 }
 
-// ------------------------------------------------------------------ simple mode
+// ------------------------------------------------------------------ coins and the token picker
 const CHAIN_NAMES = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
 const ASSET_NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'USD Coin', 'BLRD': 'Bollard' };
 const coinClass = (a) => 'c-' + (a.symbol.toLowerCase() === 'usdc' || a.symbol.toLowerCase() === 'usdt' ? a.symbol.toLowerCase() : a.chain);
@@ -172,182 +159,6 @@ function renderPicker() {
   if (!list.length) $('p-list').innerHTML = '<div class="picker-label">Nothing matches.</div>';
 }
 function currentMarket() { return `${$('m-base-asset').value}/eth:USDC`; }
-let quote = null; // { order, qty, payAtoms, getAtoms, payAsset, getAsset, market, side }
-
-async function bestQuote(payAsset, getAsset, payAtoms) {
-  const candidates = [];
-  // Asks on get/pay: the maker sells `get` for `pay`; we pay quote, receive base.
-  const m1 = `${getAsset}/${payAsset}`;
-  const b1 = await j(`/book?market=${encodeURIComponent(m1)}`).catch(() => null);
-  if (b1 && b1.asks) for (const o of b1.asks) {
-    let qty = (payAtoms * 100000000n) / BigInt(o.price);
-    if (qty > BigInt(o.qty_left)) qty = BigInt(o.qty_left);
-    if (qty < BigInt(assets[getAsset].min_quantity)) continue;
-    const pay = quoteAmount(qty, o.price);
-    if (pay < BigInt(assets[payAsset].min_quantity)) continue;
-    candidates.push({ order: o, market: m1, side: 'ask', qty, payAtoms: pay, getAtoms: qty, payAsset, getAsset });
-  }
-  // Bids on pay/get: the maker buys `pay` with `get`; we pay base, receive quote.
-  const m2 = `${payAsset}/${getAsset}`;
-  const b2 = await j(`/book?market=${encodeURIComponent(m2)}`).catch(() => null);
-  if (b2 && b2.bids) for (const o of b2.bids) {
-    let qty = payAtoms; if (qty > BigInt(o.qty_left)) qty = BigInt(o.qty_left);
-    if (qty < BigInt(assets[payAsset].min_quantity)) continue;
-    const get = quoteAmount(qty, o.price);
-    if (get < BigInt(assets[getAsset].min_quantity)) continue;
-    candidates.push({ order: o, market: m2, side: 'bid', qty, payAtoms: qty, getAtoms: get, payAsset, getAsset });
-  }
-  if (!candidates.length) return null;
-  // Best = most received per unit paid.
-  candidates.sort((a, b) => Number(b.getAtoms * 10n ** 18n / b.payAtoms - a.getAtoms * 10n ** 18n / a.payAtoms));
-  return candidates[0];
-}
-
-let quoteTimer = null;
-function scheduleQuote() { clearTimeout(quoteTimer); quoteTimer = setTimeout(computeQuote, 250); }
-async function computeQuote() {
-  quote = null; $('s-error').textContent = '';
-  const payAsset = $('s-pay-asset').value, getAsset = $('s-get-asset').value;
-  const needsAddr = getAsset !== 'BLRD';
-  $('s-addr-box').classList.toggle('hidden', !needsAddr);
-  $('s-addr-label').textContent = needsAddr ? `Receive address on ${assets[getAsset]?.chain || ''}` : '';
-  const go = $('s-go'); go.disabled = true;
-  if (payAsset === getAsset) { $('s-quote').textContent = 'Pick two different tokens.'; go.textContent = 'Pick two tokens'; return; }
-  let payAtoms;
-  try { payAtoms = toAtoms($('s-pay-amount').value || '0', payAsset); } catch (e) { $('s-quote').textContent = e.message; go.textContent = 'Enter an amount'; return; }
-  if (payAtoms === 0n) { $('s-get-amount').value = ''; $('s-quote').textContent = 'Enter an amount.'; go.textContent = 'Enter an amount'; return; }
-  $('s-quote').textContent = 'Finding the best price…';
-  const q = await bestQuote(payAsset, getAsset, payAtoms);
-  if (!q) { $('s-get-amount').value = ''; $('s-quote').textContent = `Nobody is selling ${assets[getAsset].symbol} for ${assets[payAsset].symbol} right now.`; go.textContent = 'Nothing to buy'; return; }
-  quote = q;
-  $('s-get-amount').value = fromAtoms(q.getAtoms, getAsset, false);
-  const rate = Number(q.getAtoms) / 10 ** assets[getAsset].decimals / (Number(q.payAtoms) / 10 ** assets[payAsset].decimals);
-  const partial = q.payAtoms < payAtoms ? ` Only ${fromAtoms(q.payAtoms, payAsset)} fits this order; you pay that.` : '';
-  $('s-quote').innerHTML = `1 ${assets[payAsset].symbol} = ${fmt(rate)} ${assets[getAsset].symbol} · order <span class="mono">${short(q.order.id)}</span> · maker bond ${fromAtoms(q.order.bond_left || q.order.qty_left, 'BLRD')} · fills on ${policy[q.order.fill_policy]}.${partial}`;
-  go.textContent = `Claim ${fromAtoms(q.getAtoms, getAsset)}`;
-  go.disabled = false;
-}
-for (const id of ['s-pay-amount', 's-pay-asset', 's-get-asset']) $(id).addEventListener('input', scheduleQuote);
-$('s-flip').onclick = () => {
-  const pa = $('s-pay-asset').value; $('s-pay-asset').value = $('s-get-asset').value; $('s-get-asset').value = pa;
-  $('s-pay-amount').value = $('s-get-amount').value; renderTokenButtons(); scheduleQuote();
-};
-
-const SWAP = 'bollard.swap';
-let swap = null;
-try { swap = JSON.parse(localStorage.getItem(SWAP) || 'null'); } catch {}
-
-$('s-go').onclick = async () => {
-  if (!quote) return;
-  const addr = $('s-addr').value.trim();
-  if (quote.getAsset !== 'BLRD' && !addr) { $('s-error').textContent = 'Enter the address where you want to receive ' + assets[quote.getAsset].symbol + '.'; return; }
-  $('s-go').disabled = true; $('s-error').textContent = '';
-  try {
-    const out = await send(api, ensureKey(), TxType.Claim, { order_id: hex.dec(quote.order.id), quantity: quote.qty, receive_address: addr });
-    const ms = await j(`/matches?account=${me()}&limit=5`);
-    const m = ms.find((x) => x.id === out.hash);
-    swap = { match: out.hash, payAsset: quote.payAsset, getAsset: quote.getAsset, payAtoms: m ? m.taker_amount : quote.payAtoms.toString(), payTo: m ? m.taker_pay_to : quote.order.recv_addr, getAtoms: quote.getAtoms.toString(), reported: false, at: Date.now() };
-    try { localStorage.setItem(SWAP, JSON.stringify(swap)); } catch {}
-    showSwap();
-  } catch (e) { $('s-error').textContent = e.message; $('s-go').disabled = false; }
-};
-
-function showSwap() {
-  // One thing at a time: while a swap is in flight the swap card gives way to the payment panel.
-  $('s-card').classList.toggle('hidden', !!swap);
-  if (!swap) { $('s-swap').classList.add('hidden'); return; }
-  $('s-swap').classList.remove('hidden');
-  $('s-pay-exact').textContent = fromAtoms(swap.payAtoms, swap.payAsset);
-  $('s-pay-chain-name').textContent = assets[swap.payAsset]?.chain === 'btc' ? 'Bitcoin' : assets[swap.payAsset]?.chain === 'eth' ? 'Ethereum' : assets[swap.payAsset]?.chain;
-  $('s-pay-to').textContent = swap.payTo;
-  $('s-match').textContent = short(swap.match, 16);
-  try {
-    const uri = assets[swap.payAsset]?.chain === 'btc' ? `bitcoin:${swap.payTo}?amount=${fromAtoms(swap.payAtoms, swap.payAsset, false)}` : swap.payTo;
-    const qr = qrcode(0, 'M'); qr.addData(uri); qr.make(); $('s-qr').innerHTML = qr.createSvgTag({ cellSize: 3, margin: 2 });
-  } catch { $('s-qr').innerHTML = ''; }
-  $('s-manual').classList.toggle('hidden', swap.reported);
-  $('s-done').classList.toggle('hidden', !swap.reported);
-  $('s-watch').classList.toggle('hidden', swap.reported);
-  trackSwap();
-  watchPayment();
-}
-
-let watching = false;
-async function watchPayment() {
-  if (watching) return; watching = true;
-  try {
-    while (swap && !swap.reported) {
-      try {
-        const r = await j(`/find-payment?match=${swap.match}&leg=0`);
-        if (r.txid) {
-          $('s-watch').textContent = `Payment seen: ${short(r.txid, 14)}. Reporting it…`;
-          if (!r.reported) await send(api, ensureKey(), TxType.ReportPayment, { match_id: hex.dec(swap.match), leg: 0, txid: r.txid });
-          swap.reported = true; swap.txid = r.txid; try { localStorage.setItem(SWAP, JSON.stringify(swap)); } catch {}
-          showSwap(); break;
-        }
-      } catch (e) { $('s-watch').textContent = 'Watching for your payment… (' + e.message + ')'; }
-      await new Promise((r) => setTimeout(r, 8000));
-    }
-  } finally { watching = false; }
-}
-$('s-copy').onclick = async () => {
-  try { await navigator.clipboard.writeText(swap?.payTo || ''); } catch {}
-  const b = $('s-copy'); b.textContent = 'Copied'; b.classList.add('ok'); setTimeout(() => { b.textContent = 'Copy address'; b.classList.remove('ok'); }, 1500);
-};
-$('s-report').onclick = async () => {
-  const txid = $('s-txid').value.trim();
-  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txid)) { $('s-status').textContent = 'That does not look like a transaction id.'; return; }
-  try {
-    await send(api, ensureKey(), TxType.ReportPayment, { match_id: hex.dec(swap.match), leg: 0, txid });
-    swap.reported = true; try { localStorage.setItem(SWAP, JSON.stringify(swap)); } catch {}
-    showSwap();
-  } catch (e) { $('s-status').textContent = e.message; }
-};
-$('s-done').onclick = () => { swap = null; try { localStorage.removeItem(SWAP); } catch {} showSwap(); $('s-go').disabled = false; scheduleQuote(); };
-
-function matchStatusText(m, role) {
-  if (m.status === 'expired') return 'Expired: no payment was reported in time.';
-  if (m.status === 'void') return 'Void: ' + (m.closed_reason || '');
-  if (m.status === 'missed') return role === 'taker' ? 'The maker did not deliver; their bond was paid to you.' : 'You did not deliver; your bond went to the taker.';
-  if (m.status === 'closed') return m.closed_reason === 'settled on the ledger' ? 'Done: BLRD credited to your account.' : 'Done: both payments delivered.';
-  if (!m.taker_txid) return role === 'taker' ? 'Waiting for your payment.' : 'Waiting for the taker to pay.';
-  if (!m.taker_included_height) return role === 'taker' ? 'Your payment is on its way; waiting for it to land in a block.' : 'Taker payment seen; waiting for it to land in a block.';
-  if (m.maker_chain === 'blrd') return 'Taker payment in a block; settling.';
-  if (!m.maker_txid) return role === 'taker' ? 'Your payment is in a block; waiting for the maker to deliver.' : 'The taker has paid; your turn to deliver.';
-  if (!m.maker_included_height) return 'Maker payment reported; waiting for it to land in a block.';
-  return 'Maker payment in a block; bond releases when it is deep.';
-}
-let celebrating = false;
-function celebrate() {
-  if (celebrating) return; celebrating = true;
-  $('s-success').classList.remove('hidden');
-  setTimeout(() => {
-    $('s-success').classList.add('hidden'); celebrating = false;
-    swap = null; try { localStorage.removeItem(SWAP); } catch {}
-    showSwap(); $('s-go').disabled = false; $('s-pay-amount').value = ''; $('s-get-amount').value = ''; scheduleQuote(); loadHistory(); renderAccount();
-  }, 2800);
-}
-async function trackSwap() {
-  if (!swap) return;
-  const ms = await j(`/matches?account=${me()}&limit=20`).catch(() => []);
-  const m = ms.find((x) => x.id === swap.match);
-  if (!m) { $('s-status').textContent = 'Match not found on this node yet.'; return; }
-  $('s-status').textContent = matchStatusText(m, 'taker');
-  if (m.status === 'closed') celebrate();
-}
-async function loadHistory() {
-  const pk = me(); if (!pk) { $('s-history').innerHTML = '<tr><td colspan="6" class="muted">no key yet</td></tr>'; return; }
-  const ms = await j(`/matches?account=${pk}&limit=50`).catch(() => []);
-  const mine = ms.filter((m) => m.taker === pk);
-  $('s-history').replaceChildren(...mine.map((m) => {
-    const tr = document.createElement('tr');
-    const base = m.market.split('/')[0];
-    tr.innerHTML = `<td>${new Date(m.claimed_ts).toLocaleString()}</td><td>${m.market}</td><td class="num">${fromAtoms(m.quantity, base)}</td><td>${fromAtoms(m.taker_amount, m.taker_asset)}</td><td>${fromAtoms(m.maker_amount, m.maker_asset)}</td><td>${matchStatusText(m, 'taker')}</td>`;
-    return tr;
-  }));
-  if (!mine.length) $('s-history').innerHTML = '<tr><td colspan="6" class="muted">none yet</td></tr>';
-}
-
 // ------------------------------------------------------------------ pro mode
 let chart = null, candles = null, chartMarket = null;
 function chartColors() {
@@ -481,19 +292,14 @@ for (const id of ['m-base-asset', 'm-quote-asset']) $(id).addEventListener('inpu
 
 // ------------------------------------------------------------------ boot
 (async () => {
+  // Inside the wallet's Trade tab the page has its own menubar, so hide this one.
+  if (window.self !== window.top) document.body.classList.add('embedded');
   if (API) { try { const r = await fetch(API + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) api = ''; } catch { api = ''; } }
   await loadMarkets();
   await loadStatus();
   renderAccount();
-  showSwap();
-  loadHistory();
-  scheduleQuote();
-  let mode = 'simple'; try { mode = localStorage.getItem(MODE) || 'simple'; } catch {}
-  setMode(mode);
+  loadPro(); setTimeout(fitChart, 0);
   const es = new EventSource(api + '/events');
-  es.onmessage = (m) => {
-    try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event === 'Entry') { loadStatus(); return; }
-      if (!$('pro').classList.contains('hidden')) loadPro(); else { trackSwap(); loadHistory(); scheduleQuote(); } } catch {}
-  };
-  setInterval(() => { loadStatus(); if (!$('pro').classList.contains('hidden')) loadPro(); else { trackSwap(); loadHistory(); } }, 20000);
+  es.onmessage = (m) => { try { const ev = JSON.parse(m.data); logLine(ev); if (ev.event === 'Entry') { loadStatus(); return; } loadPro(); } catch {} };
+  setInterval(() => { loadStatus(); loadPro(); }, 20000);
 })();
