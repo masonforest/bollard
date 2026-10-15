@@ -17,6 +17,26 @@ pub struct Account {
     pub nonce: i64,
     pub balance: i64,
     pub locked: i64,
+    pub preferred: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Balance {
+    #[serde(serialize_with = "hex_bytes")]
+    pub account: Vec<u8>,
+    pub asset: String,
+    #[serde(serialize_with = "hex_bytes")]
+    pub issuer: Vec<u8>,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Issuer {
+    #[serde(serialize_with = "hex_bytes")]
+    pub account: Vec<u8>,
+    pub asset: String,
+    pub issued: i64,
+    pub cover: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -41,6 +61,9 @@ pub struct Order {
     pub expiry_height: i32,
     pub status: String,
     pub claims: i32,
+    pub settle: i16,
+    pub escrow_asset: String,
+    pub escrow_left: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -84,6 +107,7 @@ pub struct Match {
     pub maker_included_height: Option<i32>,
     pub closed_seq: Option<i64>,
     pub closed_reason: Option<String>,
+    pub kind: String,
 }
 
 pub fn hex_opt<S: serde::Serializer>(v: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {

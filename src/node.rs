@@ -479,13 +479,13 @@ impl Node {
         let taker_deadline = m.claimed_height as u32 + taker_params.taker_deadline;
 
         let Some(taker_txid) = m.taker_txid.clone() else {
-            if now_ms() >= m.claimed_ts as u64 + apply::CLAIM_WINDOW_MS {
+            if m.kind == "deposit" && now_ms() >= m.claimed_ts as u64 + apply::CLAIM_WINDOW_MS {
                 self.append(Body::ClaimExpired { match_id: mid }).await?;
             }
             return Ok(());
         };
 
-        if m.taker_included_height.is_none() {
+        if m.kind == "deposit" && m.taker_included_height.is_none() {
             let asset = chain::asset(&m.taker_asset).ok_or_else(|| anyhow!("unknown asset"))?;
             match self.chains.check_payment(asset, &taker_txid, &m.taker_pay_to, m.taker_amount as u64).await? {
                 PaymentStatus::Included { block_hash, block_height, .. } => {
@@ -504,6 +504,9 @@ impl Node {
             return Ok(());
         }
 
+        if m.kind != "exercise" {
+            return Ok(());
+        }
         let inc = m.taker_included_height.unwrap_or(0) as u32;
         let maker_deadline = inc + maker_params.maker_deadline + GRACE_BLOCKS;
         let Some(maker_txid) = m.maker_txid.clone() else {

@@ -30,6 +30,11 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/matches", get(matches))
         .route("/trades", get(trades))
         .route("/find-payment", get(find_payment))
+        .route("/balances/{account}", get(balances))
+        .route("/activity/{account}", get(activity))
+        .route("/issuers", get(issuers))
+        .route("/keys", post(register_key))
+        .route("/keys/{cred}", get(lookup_key))
         .route("/log", get(log_stream))
         .route("/log/range", get(log_range))
         .route("/log/seq/{seq}", get(log_by_seq))
@@ -108,9 +113,10 @@ struct BookQuery {
 
 async fn book(State(n): S, Query(q): Query<BookQuery>) -> ApiResult {
     chain::parse_market(&q.market)?;
-    let bids = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 0 order by price desc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
-    let asks = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 1 order by price asc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
-    Ok(Json(json!({"market": q.market, "bids": bids, "asks": asks})))
+    let bids = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 0 and settle = 0 order by price desc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
+    let asks = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 1 and settle = 0 order by price asc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
+    let deposits = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and settle = 1 order by price asc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
+    Ok(Json(json!({"market": q.market, "bids": bids, "asks": asks, "deposits": deposits})))
 }
 
 async fn account(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
@@ -118,8 +124,91 @@ async fn account(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
     let a = sqlx::query_as::<_, db::Account>("select * from accounts where pubkey = $1").bind(&pk).fetch_optional(&n.db).await?;
     Ok(Json(match a {
         Some(a) => json!(a),
-        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0}),
+        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0, "preferred": null}),
     }))
+}
+
+/// Everything an account holds: BLRD plus option balances summed per asset,
+/// with the issuer lots behind them.
+async fn balances(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
+    let pk = hex::decode(&pubkey)?;
+    let a = sqlx::query_as::<_, db::Account>("select * from accounts where pubkey = $1").bind(&pk).fetch_optional(&n.db).await?;
+    let lots = sqlx::query_as::<_, db::Balance>("select * from balances where account = $1 and amount > 0 order by asset, issuer").bind(&pk).fetch_all(&n.db).await?;
+    let mut totals: Vec<(String, i64)> = Vec::new();
+    for l in &lots {
+        match totals.iter_mut().find(|(a, _)| a == &l.asset) {
+            Some(t) => t.1 += l.amount,
+            None => totals.push((l.asset.clone(), l.amount)),
+        }
+    }
+    let issuing = sqlx::query_as::<_, db::Issuer>("select * from issuers where account = $1 and issued > 0").bind(&pk).fetch_all(&n.db).await?;
+    Ok(Json(json!({
+        "account": pubkey,
+        "preferred": a.as_ref().and_then(|a| a.preferred.clone()),
+        "blrd": a.as_ref().map(|a| a.balance).unwrap_or(0),
+        "blrd_locked": a.as_ref().map(|a| a.locked).unwrap_or(0),
+        "nonce": a.as_ref().map(|a| a.nonce).unwrap_or(0),
+        "assets": totals.iter().map(|(a, t)| json!({"asset": a, "amount": t})).collect::<Vec<_>>(),
+        "lots": lots,
+        "issuing": issuing,
+    })))
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+struct TransferRow {
+    seq: i64,
+    ts: i64,
+    #[serde(serialize_with = "crate::fbio::hex_bytes")]
+    sender: Vec<u8>,
+    #[serde(serialize_with = "crate::fbio::hex_bytes")]
+    receiver: Vec<u8>,
+    asset: String,
+    amount: i64,
+    delivered_asset: String,
+    delivered: i64,
+}
+
+/// What happened to an account: sends in and out, deposits, exercises, trades.
+async fn activity(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
+    let pk = hex::decode(&pubkey)?;
+    let transfers = sqlx::query_as::<_, TransferRow>("select * from transfers where sender = $1 or receiver = $1 order by seq desc limit 200").bind(&pk).fetch_all(&n.db).await?;
+    let matches = sqlx::query_as::<_, db::Match>("select * from matches where maker = $1 or taker = $1 order by seq desc limit 200").bind(&pk).fetch_all(&n.db).await?;
+    Ok(Json(json!({"transfers": transfers, "matches": matches})))
+}
+
+async fn issuers(State(n): S) -> ApiResult {
+    let rows = sqlx::query_as::<_, db::Issuer>("select * from issuers where issued > 0 order by asset, cover desc").fetch_all(&n.db).await?;
+    Ok(Json(json!(rows)))
+}
+
+#[derive(Deserialize)]
+struct KeyReg {
+    cred_id: String,
+    pubkey: String,
+}
+
+/// Remember which passkey credential belongs to which account, so a new
+/// device can sign in by credential id. Anyone can register; the key must be a
+/// valid P-256 point and the first registration of a credential id wins.
+async fn register_key(State(n): S, Json(k): Json<KeyReg>) -> ApiResult {
+    let pk = hex::decode(&k.pubkey)?;
+    if pk.len() != 65 || !crate::crypto::valid_account(&pk) {
+        return Err(anyhow::anyhow!("pubkey must be a 65-byte P-256 key").into());
+    }
+    if k.cred_id.is_empty() || k.cred_id.len() > 512 {
+        return Err(anyhow::anyhow!("bad credential id").into());
+    }
+    sqlx::query("insert into passkeys (cred_id, pubkey, created) values ($1, $2, $3) on conflict do nothing").bind(&k.cred_id).bind(&pk).bind(crate::node::now_ms() as i64).execute(&n.db).await?;
+    let stored: (Vec<u8>,) = sqlx::query_as("select pubkey from passkeys where cred_id = $1").bind(&k.cred_id).fetch_one(&n.db).await?;
+    Ok(Json(json!({"cred_id": k.cred_id, "pubkey": hex::encode(stored.0)})))
+}
+
+async fn lookup_key(State(n): S, Path(cred): Path<String>) -> Result<Response, ApiError> {
+    let row: Option<(Vec<u8>,)> = sqlx::query_as("select pubkey from passkeys where cred_id = $1").bind(&cred).fetch_optional(&n.db).await?;
+    Ok(match row {
+        Some((pk,)) => Json(json!({"cred_id": cred, "pubkey": hex::encode(pk)})).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({"error": "unknown passkey"}))).into_response(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -127,6 +216,7 @@ struct ListQuery {
     account: Option<String>,
     market: Option<String>,
     status: Option<String>,
+    kind: Option<String>,
     limit: Option<i64>,
 }
 
@@ -147,12 +237,13 @@ async fn orders(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
 async fn matches(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
     let acct = q.account.as_deref().map(hex::decode).transpose()?;
     let rows = sqlx::query_as::<_, db::Match>(
-        "select * from matches where ($1::bytea is null or maker = $1 or taker = $1) and ($2::text is null or market = $2) and ($3::text is null or status = $3) order by seq desc limit $4",
+        "select * from matches where ($1::bytea is null or maker = $1 or taker = $1) and ($2::text is null or market = $2) and ($3::text is null or status = $3) and ($5::text is null or kind = $5) order by seq desc limit $4",
     )
     .bind(acct)
     .bind(q.market)
     .bind(q.status)
     .bind(q.limit.unwrap_or(100).clamp(1, 1000))
+    .bind(q.kind)
     .fetch_all(&n.db)
     .await?;
     Ok(Json(json!(rows)))

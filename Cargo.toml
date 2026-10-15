@@ -17,6 +17,7 @@ bitcoin = { version = "0.32", features = ["rand-std", "serde", "base64"] }
 sha2 = "0.10"
 hex = "0.4"
 sha3 = "0.10"
+p256 = { version = "0.13", features = ["ecdsa"] }
 base64 = "0.22"
 flatbuffers = "25.12.19"
 tracing = "0.1"

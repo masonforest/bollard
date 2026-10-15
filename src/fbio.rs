@@ -32,6 +32,7 @@ pub enum TxBody {
         fill_policy: u8,
         receive_address: String,
         expiry_height: u32,
+        settle: u8,
     },
     CancelOrder {
         #[serde(serialize_with = "hex_bytes")]
@@ -49,6 +50,16 @@ pub enum TxBody {
         leg: u8,
         txid: String,
     },
+    Mint { asset: String, quantity: u64, bond: u64 },
+    Burn { asset: String, quantity: u64 },
+    Send {
+        #[serde(serialize_with = "hex_bytes")]
+        to: Vec<u8>,
+        asset: String,
+        amount: u64,
+    },
+    Exercise { asset: String, quantity: u64, receive_address: String },
+    SetCurrency { asset: String },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -57,10 +68,15 @@ pub struct ParsedTx {
     pub tx_bytes: Vec<u8>,
     #[serde(skip)]
     pub sig: Vec<u8>,
+    #[serde(skip)]
+    pub auth_data: Vec<u8>,
+    #[serde(skip)]
+    pub client_data: Vec<u8>,
     #[serde(serialize_with = "hex_bytes")]
     pub hash: [u8; 32],
+    /// 33 bytes (secp256k1) or 65 bytes (P-256 passkey)
     #[serde(serialize_with = "hex_bytes")]
-    pub account: [u8; 33],
+    pub account: Vec<u8>,
     pub nonce: u64,
     pub body: TxBody,
 }
@@ -105,6 +121,11 @@ impl ParsedEntry {
                 TxBody::CancelOrder { .. } => "CancelOrder",
                 TxBody::Claim { .. } => "Claim",
                 TxBody::ReportPayment { .. } => "ReportPayment",
+                TxBody::Mint { .. } => "Mint",
+                TxBody::Burn { .. } => "Burn",
+                TxBody::Send { .. } => "Send",
+                TxBody::Exercise { .. } => "Exercise",
+                TxBody::SetCurrency { .. } => "SetCurrency",
             },
             Body::EpochStart { .. } => "EpochStart",
             Body::ClaimExpired { .. } => "ClaimExpired",
@@ -129,7 +150,7 @@ fn a33(b: &[u8]) -> Result<[u8; 33]> {
     b.try_into().map_err(|_| anyhow!("expected a 33-byte public key, got {} bytes", b.len()))
 }
 
-pub fn build_tx(account: &[u8; 33], nonce: u64, body: &TxBody) -> Vec<u8> {
+pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
     let mut b = FlatBufferBuilder::with_capacity(256);
     let acct = b.create_vector(account);
     let (bt, bo) = match body {
@@ -137,7 +158,7 @@ pub fn build_tx(account: &[u8; 33], nonce: u64, body: &TxBody) -> Vec<u8> {
             let to = b.create_vector(to);
             (fb::TxBody::Transfer, fb::Transfer::create(&mut b, &fb::TransferArgs { to: Some(to), amount: *amount }).as_union_value())
         }
-        TxBody::PlaceOrder { market, side, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height } => {
+        TxBody::PlaceOrder { market, side, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle } => {
             let market = b.create_string(market);
             let ra = b.create_string(receive_address);
             let args = fb::PlaceOrderArgs {
@@ -150,6 +171,7 @@ pub fn build_tx(account: &[u8; 33], nonce: u64, body: &TxBody) -> Vec<u8> {
                 fill_policy: *fill_policy,
                 receive_address: Some(ra),
                 expiry_height: *expiry_height,
+                settle: *settle,
             };
             (fb::TxBody::PlaceOrder, fb::PlaceOrder::create(&mut b, &args).as_union_value())
         }
@@ -169,6 +191,28 @@ pub fn build_tx(account: &[u8; 33], nonce: u64, body: &TxBody) -> Vec<u8> {
             let args = fb::ReportPaymentArgs { match_id: Some(m), leg: *leg, txid: Some(t) };
             (fb::TxBody::ReportPayment, fb::ReportPayment::create(&mut b, &args).as_union_value())
         }
+        TxBody::Mint { asset, quantity, bond } => {
+            let a = b.create_string(asset);
+            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity, bond: *bond }).as_union_value())
+        }
+        TxBody::Burn { asset, quantity } => {
+            let a = b.create_string(asset);
+            (fb::TxBody::Burn, fb::Burn::create(&mut b, &fb::BurnArgs { asset: Some(a), quantity: *quantity }).as_union_value())
+        }
+        TxBody::Send { to, asset, amount } => {
+            let to = b.create_vector(to);
+            let a = b.create_string(asset);
+            (fb::TxBody::Send, fb::Send::create(&mut b, &fb::SendArgs { to: Some(to), asset: Some(a), amount: *amount }).as_union_value())
+        }
+        TxBody::Exercise { asset, quantity, receive_address } => {
+            let a = b.create_string(asset);
+            let ra = b.create_string(receive_address);
+            (fb::TxBody::Exercise, fb::Exercise::create(&mut b, &fb::ExerciseArgs { asset: Some(a), quantity: *quantity, receive_address: Some(ra) }).as_union_value())
+        }
+        TxBody::SetCurrency { asset } => {
+            let a = b.create_string(asset);
+            (fb::TxBody::SetCurrency, fb::SetCurrency::create(&mut b, &fb::SetCurrencyArgs { asset: Some(a) }).as_union_value())
+        }
     };
     let tx = fb::Tx::create(&mut b, &fb::TxArgs { account: Some(acct), nonce, body_type: bt, body: Some(bo) });
     b.finish(tx, None);
@@ -180,7 +224,7 @@ pub fn sign_tx(tx_bytes: &[u8], kp: &Keypair) -> Vec<u8> {
     let mut b = FlatBufferBuilder::with_capacity(tx_bytes.len() + 128);
     let t = b.create_vector(tx_bytes);
     let sg = b.create_vector(&sig);
-    let st = fb::SignedTx::create(&mut b, &fb::SignedTxArgs { tx: Some(t), sig: Some(sg) });
+    let st = fb::SignedTx::create(&mut b, &fb::SignedTxArgs { tx: Some(t), sig: Some(sg), auth_data: None, client_data: None });
     b.finish(st, None);
     b.finished_data().to_vec()
 }
@@ -203,6 +247,7 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
                 fill_policy: t.fill_policy(),
                 receive_address: t.receive_address().unwrap_or("").to_string(),
                 expiry_height: t.expiry_height(),
+                settle: t.settle(),
             }
         }
         fb::TxBody::CancelOrder => {
@@ -217,26 +262,50 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
             let t = tx.body_as_report_payment().ok_or_else(|| anyhow!("bad ReportPayment"))?;
             TxBody::ReportPayment { match_id: bytes(t.match_id()).to_vec(), leg: t.leg(), txid: t.txid().unwrap_or("").to_string() }
         }
+        fb::TxBody::Mint => {
+            let t = tx.body_as_mint().ok_or_else(|| anyhow!("bad Mint"))?;
+            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), bond: t.bond() }
+        }
+        fb::TxBody::Burn => {
+            let t = tx.body_as_burn().ok_or_else(|| anyhow!("bad Burn"))?;
+            TxBody::Burn { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
+        }
+        fb::TxBody::Send => {
+            let t = tx.body_as_send().ok_or_else(|| anyhow!("bad Send"))?;
+            TxBody::Send { to: bytes(t.to()).to_vec(), asset: t.asset().unwrap_or("").to_string(), amount: t.amount() }
+        }
+        fb::TxBody::Exercise => {
+            let t = tx.body_as_exercise().ok_or_else(|| anyhow!("bad Exercise"))?;
+            TxBody::Exercise { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), receive_address: t.receive_address().unwrap_or("").to_string() }
+        }
+        fb::TxBody::SetCurrency => {
+            let t = tx.body_as_set_currency().ok_or_else(|| anyhow!("bad SetCurrency"))?;
+            TxBody::SetCurrency { asset: t.asset().unwrap_or("").to_string() }
+        }
         _ => bail!("unknown transaction body"),
     })
 }
 
-fn parse_tx_parts(tx_bytes: Vec<u8>, sig: Vec<u8>) -> Result<ParsedTx> {
+fn parse_tx_parts(tx_bytes: Vec<u8>, sig: Vec<u8>, auth_data: Vec<u8>, client_data: Vec<u8>) -> Result<ParsedTx> {
     let (account, nonce, body) = {
         let tx = flatbuffers::root::<fb::Tx>(&tx_bytes).map_err(|e| anyhow!("bad Tx: {e}"))?;
-        (a33(bytes(tx.account()))?, tx.nonce(), parse_tx_body(&tx)?)
+        (bytes(tx.account()).to_vec(), tx.nonce(), parse_tx_body(&tx)?)
     };
+    if !crypto::valid_account(&account) {
+        bail!("account must be a 33-byte secp256k1 key or a 65-byte P-256 key");
+    }
     let hash = crypto::sha256(&tx_bytes);
-    if !crypto::verify(&account, &hash, &sig) {
+    let ok = if account.len() == 33 { crypto::verify(&account, &hash, &sig) } else { crypto::verify_webauthn(&account, &hash, &sig, &auth_data, &client_data) };
+    if !ok {
         bail!("bad transaction signature");
     }
-    Ok(ParsedTx { tx_bytes, sig, hash, account, nonce, body })
+    Ok(ParsedTx { tx_bytes, sig, auth_data, client_data, hash, account, nonce, body })
 }
 
 /// Parse and verify a SignedTx buffer as submitted by a user.
 pub fn parse_signed_tx(signed: &[u8]) -> Result<ParsedTx> {
     let st = flatbuffers::root::<fb::SignedTx>(signed).map_err(|e| anyhow!("bad SignedTx: {e}"))?;
-    parse_tx_parts(bytes(st.tx()).to_vec(), bytes(st.sig()).to_vec())
+    parse_tx_parts(bytes(st.tx()).to_vec(), bytes(st.sig()).to_vec(), bytes(st.auth_data()).to_vec(), bytes(st.client_data()).to_vec())
 }
 
 pub fn build_entry_content(seq: u64, prev: &[u8; 32], height: u32, time: u64, leader: &[u8; 33], body: &Body) -> Vec<u8> {
@@ -247,7 +316,9 @@ pub fn build_entry_content(seq: u64, prev: &[u8; 32], height: u32, time: u64, le
         Body::Tx(t) => {
             let tx = b.create_vector(&t.tx_bytes);
             let sig = b.create_vector(&t.sig);
-            (fb::EntryBody::SignedTx, fb::SignedTx::create(&mut b, &fb::SignedTxArgs { tx: Some(tx), sig: Some(sig) }).as_union_value())
+            let ad = if t.auth_data.is_empty() { None } else { Some(b.create_vector(&t.auth_data)) };
+            let cd = if t.client_data.is_empty() { None } else { Some(b.create_vector(&t.client_data)) };
+            (fb::EntryBody::SignedTx, fb::SignedTx::create(&mut b, &fb::SignedTxArgs { tx: Some(tx), sig: Some(sig), auth_data: ad, client_data: cd }).as_union_value())
         }
         Body::EpochStart { height, entry_txid } => {
             let t = b.create_string(entry_txid);
@@ -313,7 +384,7 @@ pub fn parse_entry(buf: &[u8]) -> Result<ParsedEntry> {
     let body = match c.body_type() {
         fb::EntryBody::SignedTx => {
             let st = c.body_as_signed_tx().ok_or_else(|| anyhow!("bad SignedTx"))?;
-            Body::Tx(parse_tx_parts(bytes(st.tx()).to_vec(), bytes(st.sig()).to_vec())?)
+            Body::Tx(parse_tx_parts(bytes(st.tx()).to_vec(), bytes(st.sig()).to_vec(), bytes(st.auth_data()).to_vec(), bytes(st.client_data()).to_vec())?)
         }
         fb::EntryBody::EpochStart => {
             let t = c.body_as_epoch_start().ok_or_else(|| anyhow!("bad EpochStart"))?;

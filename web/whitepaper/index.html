@@ -16,10 +16,11 @@
     <a href="https://github.com/masonforest/bollard">Source</a>
     <a href="https://mainnet.bollard.exchange/status">API</a>
   </nav>
-<h1>Bollard: Protocol Design v0.1</h1>
+<h1>Bollard: Protocol Design v0.2</h1>
 <p>October 2026</p>
 <h2>Summary</h2>
-<p>Bollard is a cross-chain exchange with a real order book, settled by direct payments between traders, and finalized on Bitcoin. Users post bids and asks on the network. A taker claims an order and pays the maker first, on the maker's chain; the maker then pays the taker, and a bond in the network token (BLRD) posted by the maker backs that second payment. A maker that fills on sight makes the swap take seconds; finality and the bond release catch up in the background. Nobody custodies anything: no vaults, no wrapped coins, no threshold signatures.</p>
+<p>Bollard is a cross-chain exchange with a real order book, finalized on Bitcoin. What trades on it are options: a maker's bonded promise to deliver a coin on its own chain. A maker issues options on coins it holds, locking BLRD, the network token, as cover. Holders move options between accounts instantly and for free, trade them against each other on the book, and exercise them when they want the real coin, at which point the issuer must deliver on chain or lose its cover to the holder. Nobody custodies anything: no vaults, no wrapped coins, no threshold signatures. A balance on Bollard is a bundle of promises, each one backed by a named maker and a visible bond.</p>
+<p>Every account picks a currency. Send someone dollars and they receive dollars; send them dollars when they hold bitcoin and the network converts on the way at the best price on the book, in the same transaction. Accounts are passkeys, so there is nothing to back up and nothing to paste.</p>
 <p>One leader at a time sequences transactions in realtime. That leader is chosen by a fee-weighted lottery, run entirely through Bitcoin OP_RETURN data, in every Bitcoin block that has entries. A Bitcoin miner can enter at no cost, because the entry fee is paid to whoever mines the block. This is by design. The leader's log is finalized when the next winning lottery entry commits to it on Bitcoin.</p>
 <h2>Actors and components</h2>
 <p>There are five kinds of participant. Only the leader has any power, and only for one Bitcoin block at a time.</p>
@@ -33,14 +34,14 @@
 </thead>
 <tbody>
 <tr>
-<td>Maker</td>
-<td>Rests orders backed by a BLRD bond; pays the taker once the taker's payment is in a block</td>
-<td>The spread; the bond back once its own payment is deep</td>
+<td>Maker (issuer)</td>
+<td>Issues options on coins it holds, locking BLRD cover; sells them for on-chain payment (a deposit) or on the book; delivers the coin when a holder exercises</td>
+<td>The spread; the cover back as options are burned or delivered on</td>
 </tr>
 <tr>
-<td>Taker</td>
-<td>Claims an order and pays the maker first, on the maker's chain; needs no BLRD</td>
-<td>The asset bought, or the maker's bond if the maker fails to deliver</td>
+<td>Holder (user)</td>
+<td>Keeps a balance of options in a chosen currency; sends, receives and trades them instantly; exercises to take the coin out; needs no BLRD</td>
+<td>The coin on exercise, or the issuer's cover if the issuer fails to deliver</td>
 </tr>
 <tr>
 <td>Node (follower)</td>
@@ -64,8 +65,8 @@
 </tr>
 </tbody>
 </table>
-<p>Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, orders, matches, legs), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.</p>
-<p>Bitcoin picks the leader and finalizes its log, traders pay each other on the external chains, and the nodes sequence and watch without ever holding coins.</p>
+<p>Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, balances, issuers, orders, matches), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.</p>
+<p>Bitcoin picks the leader and finalizes its log, coins move on the external chains only when options are bought with them or exercised, and the nodes sequence and watch without ever holding coins.</p>
 <h2>The Bitcoin lottery</h2>
 <p>One Bitcoin transaction does three jobs: it enters the lottery, it announces where the entrant's node lives, and it commits to a checkpoint of the log. Bollard never writes anything else to Bitcoin.</p>
 <h3>Entry transaction</h3>
@@ -186,8 +187,8 @@
 </table>
 <h3>Kinds</h3>
 <ul>
-<li>User-signed: Register, Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment.</li>
-<li>Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (releases or slashes the bond), Handoff (reason, replaced leader).</li>
+<li>User-signed: Transfer, Mint, Burn, Send, SetCurrency, PlaceOrder, CancelOrder, Claim, ReportPayment, Exercise.</li>
+<li>Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (releases or slashes the cover), Handoff (reason, replaced leader).</li>
 </ul>
 <p>Rule: every leader-asserted entry must be checkable by any node from Bitcoin, the external chains and prior state. A follower that finds one false treats the log as invalid from that entry on.</p>
 <h3>Handoff at a new block</h3>
@@ -208,13 +209,46 @@
 </ul>
 <h3>Bitcoin reorgs</h3>
 <p>Bollard follows Bitcoin's chain exactly. If Bitcoin reorgs, the epochs, leaders and checkpoints of the replaced blocks are recomputed, and live entries from a replaced leader are orphaned and resubmitted. There is no built-in confirmation lag; depth is the user's choice, as on Bitcoin.</p>
+<h2>Accounts</h2>
+<p>An account is a public key. Two kinds are accepted: a secp256k1 key, which is also a Bitcoin address and is what nodes use, and a P-256 key held by a passkey, which is what people use. A passkey signs a transaction with an ordinary WebAuthn assertion whose challenge is the hash of the transaction; the node checks the assertion and the challenge. The key never leaves the device's secure hardware, it syncs through the platform's passkey store, and there is no secret to write down. Registration is not a transaction: an account exists the first time it is paid.</p>
+<p>Each account has a currency: the asset it holds its balance in and wants to be paid in. The default is dollars. SetCurrency changes it.</p>
+<h2>Options</h2>
+<p>A balance on Bollard is not a coin. It is a quantity of options on a coin, each issued by a maker who holds the real coin off the ledger and has locked BLRD as cover. The ledger tracks, for every account, how much of each asset it holds and from which issuer. Options from different issuers on the same asset are fungible for sending and trading; they differ only in who stands behind them, and the interface shows that.</p>
+<h3>Issuing</h3>
+<table>
+<thead>
+<tr>
+<th>Transaction</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mint(asset, quantity, cover)</td>
+<td>Creates <code>quantity</code> options on <code>asset</code> in the issuer's own balance and locks <code>cover</code> BLRD from the issuer's account. An issuer's cover for an asset is pooled: every option it has issued on that asset is backed by the pool, pro rata.</td>
+</tr>
+<tr>
+<td>Burn(asset, quantity)</td>
+<td>Destroys options the issuer holds and releases the matching share of its cover.</td>
+</tr>
+</tbody>
+</table>
+<p>There is no price oracle, so the protocol cannot judge whether cover is enough. The cover ratio (BLRD locked per unit issued) is public, the interface prices it from the network's own BLRD markets, and holders see it before they accept an issuer's options. An issuer with thin cover finds its options discounted on the book or refused. That is the whole enforcement, and it is the same enforcement a bank faces.</p>
+<h3>Moving</h3>
+<p>Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders on the book that turn the sent asset into the recipient's currency, fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.</p>
+<h3>Exercising</h3>
+<p>Exercise(asset, quantity, receive address) burns options the holder has and opens a delivery match against their issuer, oldest issuer first. The issuer must pay the coin to the holder's address on its chain by the maker deadline. The holder's share of the issuer's cover is the bond on that match, and it follows the bond rules in Settlement below: released to whoever delivers, paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.</p>
 <h2>Order book and matching</h2>
-<p>The book lives in the log, and every node rebuilds it from there. Makers rest bonded orders; takers claim them. A claim is matched on entry against the best resting orders at or better than its price, and each assignment is a match.</p>
+<p>The book lives in the log, and every node rebuilds it from there. Makers rest orders; takers claim them. An order says how it settles:</p>
+<ul>
+<li>On the ledger. Both sides are options already on Bollard. The maker's side is escrowed at placement, the taker's side is debited at claim, and the fill is one atomic log entry. This is how options trade against each other, and how a send converts currencies.</li>
+<li>On chain (a deposit). The maker sells options for the real coin. The taker claims, pays the maker on the coin's chain, and the escrowed options are released to the taker when the payment is in a block. This is how coins come in.</li>
+</ul>
 <h3>Assets and markets</h3>
 <ul>
 <li>An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.</li>
-<li>Supported assets are those the node software has an adapter for. Which assets ship first is an implementation decision, not part of this design; adding one is a software release, not a vote.</li>
-<li>A market is any pair of supported assets, priced as quote per base.</li>
+<li>Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote.</li>
+<li>A market is any pair of supported assets, priced as quote per base. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.</li>
 </ul>
 <h3>Resting order (maker)</h3>
 <table>
@@ -230,6 +264,10 @@
 <td>a pair of supported assets, and buy or sell</td>
 </tr>
 <tr>
+<td>settle</td>
+<td>on the ledger, or on chain</td>
+</tr>
+<tr>
 <td>quantity</td>
 <td>in base units; partial claims allowed</td>
 </tr>
@@ -238,20 +276,12 @@
 <td>limit, quote per base</td>
 </tr>
 <tr>
-<td>bond</td>
-<td>BLRD per unit of base, locked from the maker's account at placement</td>
-</tr>
-<tr>
 <td>claim bond</td>
-<td>BLRD a claimant must lock to claim; default 0</td>
-</tr>
-<tr>
-<td>fill policy</td>
-<td>when the maker delivers: on seeing the taker's payment, on its inclusion (the protocol's own trigger), or on its finality; shown in the book</td>
+<td>BLRD a claimant must lock to claim an on-chain order; default 0</td>
 </tr>
 <tr>
 <td>receive address</td>
-<td>where the maker is paid, on the chain of the asset it is buying: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo</td>
+<td>on-chain orders only: where the maker is paid: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo</td>
 </tr>
 <tr>
 <td>expiry</td>
@@ -259,6 +289,7 @@
 </tr>
 </tbody>
 </table>
+<p>A sell order escrows the base (options, or BLRD) at placement; a ledger buy order escrows the quote. Escrow is what backs a resting order, so there is no separate bond.</p>
 <h3>Claim (taker)</h3>
 <table>
 <thead>
@@ -270,41 +301,38 @@
 <tbody>
 <tr>
 <td>target</td>
-<td>one order id, or a market, side and limit price</td>
+<td>one order id</td>
 </tr>
 <tr>
 <td>quantity</td>
-<td>up to the remainder of the orders it hits</td>
-</tr>
-<tr>
-<td>receive address</td>
-<td>the taker's address on the chain of the asset being bought</td>
+<td>up to the remainder of the order</td>
 </tr>
 </tbody>
 </table>
 <h3>Rules</h3>
 <ol>
 <li>Price-time priority among resting orders: best price first, then lowest seq.</li>
-<li>Only makers bond. A resting order locks bond-per-unit times quantity from the maker's account at placement. A claim locks nothing unless the order asks for a claim bond.</li>
-<li>A claim is matched on entry against resting orders at or better than its price, up to its quantity. Each assignment is a match with its own legs. An unmatched remainder is dropped, never rested; to rest, post a bonded order.</li>
-<li>A claimed order is held for the claimant for 3 minutes of leader time. If no payment txid is posted by then, it reopens for anyone.</li>
-<li>Cancel removes the unclaimed remainder at once. Claimed quantity cannot be cancelled.</li>
-<li>Markets with BLRD as the base: the maker's BLRD is escrowed at placement and released to the taker by the ledger when the taker's payment is in a block. No maker action, no separate bond.</li>
+<li>A ledger claim fills at once: the taker's quote (or base) is debited, the maker's escrow is released to the taker, and the match is recorded closed in the same entry. Nothing waits.</li>
+<li>An on-chain claim holds the order for the claimant for 3 minutes of leader time. If no payment txid is posted by then, it reopens for anyone.</li>
+<li>Cancel removes the unclaimed remainder at once and returns its escrow. Claimed quantity cannot be cancelled.</li>
 <li>Dust: each adapter sets a minimum quantity for its asset.</li>
 <li>One payment, one match. A transaction id can satisfy only one leg on the whole ledger, and the per-claim addresses above are what make that safe in practice.</li>
 </ol>
-<p>A match does not move coins. It records who owes what to whom and holds the maker's bond; settlement is the next section.</p>
-<h2>Settlement and bonds</h2>
-<p>The taker pays first, the maker pays second, and only the maker holds a bond. A taker who never pays loses nothing but the claim. A maker who never pays loses the bond to the taker.</p>
-<h3>Steps for a match</h3>
+<h2>Settlement and cover</h2>
+<p>Coins move on chain in exactly two cases: a deposit, where a taker pays a maker for options, and an exercise, where a maker pays a holder for options burned. In a deposit the taker pays first and risks nothing but the claim. In an exercise the maker pays and its cover is the bond.</p>
+<h3>Deposit</h3>
 <ol>
-<li>Claim. The taker claims one order, or the best orders at a price up to a quantity. The claim is sequenced in milliseconds and the book shows the order as claimed. The taker has 3 minutes of leader time to post a payment txid, or the claim expires and the order reopens for anyone.</li>
-<li>Taker pays. The taker sends the quote asset to the maker's receive address and posts ReportPayment(match, txid).</li>
-<li>Taker's leg is included. Every node watches the chain for the payment to land in a block. The leader appends LegIncluded(leg, txid, block hash, height). That is the protocol's trigger. If the payment is not in a block within the taker deadline, counted in Bitcoin blocks from the claim, the claim is void and the order reopens. If a reorg later removes it, the match is void and the order reopens; a maker that had already delivered takes that loss.</li>
-<li>Maker pays. The maker sends the base asset to the taker's receive address as soon as the taker's payment reaches the order's fill policy (seen, included or final), and posts ReportPayment. The maker deadline runs from the taker's LegIncluded. Filling on sight is the maker's own risk, priced into its spread.</li>
-<li>Anyone may pay the maker's leg. The bond is released to whoever's payment satisfied it. If the maker is slow or gone, a third party can deliver and take the bond. That is the repo.</li>
-<li>Maker's leg is included; the taker has the coins. The bond is released only once that payment is deep (the depth each chain's adapter sets, at or beyond that chain's own finality), so a maker cannot profit from a reorg of its own payment. The wait costs the maker nothing but time.</li>
-<li>MatchClosed. The bond, minus the match fee, is released to the payer of the maker's leg.</li>
+<li>Claim. The taker claims an on-chain order. The claim is sequenced in milliseconds and the options are held in escrow for the taker. The taker has 3 minutes of leader time to post a payment txid, or the claim expires and the order reopens.</li>
+<li>Taker pays. The taker sends the coin to the address derived for this claim and posts ReportPayment(match, txid). Wallets find the payment on the chain themselves; nobody has to paste anything.</li>
+<li>Included. Every node watches the chain for the payment to land in a block. The leader appends LegIncluded(leg, txid, block hash, height), the escrowed options go to the taker, and the match closes. If the payment is not in a block by the taker deadline, counted in Bitcoin blocks from the claim, the claim is void and the order reopens. If a reorg later removes it, the options are already spent; the maker's own chain policy is what protects it, and a deposit order can ask for a claim bond.</li>
+</ol>
+<h3>Exercise</h3>
+<ol>
+<li>Exercise. The holder's options are burned and a delivery match opens against the issuer, with the holder's pro-rata share of the issuer's cover as the bond.</li>
+<li>Maker pays. The issuer sends the coin to the holder's address and posts ReportPayment. The maker deadline is counted in Bitcoin blocks from the exercise.</li>
+<li>Anyone may pay. The bond is released to whoever's payment satisfied the leg. If the issuer is slow or gone, a third party can deliver and take the bond. That is the repo.</li>
+<li>Included and deep. The bond is released only once the payment is deep (the depth each chain's adapter sets, at or beyond that chain's own finality), so an issuer cannot profit from a reorg of its own payment.</li>
+<li>MatchClosed. The bond, minus the match fee, is released to the payer.</li>
 </ol>
 <h3>Outcomes</h3>
 <table>
@@ -316,74 +344,39 @@
 </thead>
 <tbody>
 <tr>
-<td>Taker never posts a txid</td>
+<td>Deposit: taker never posts a txid</td>
 <td>Claim expires after 3 minutes; order reopens; any claim bond goes to the maker</td>
 </tr>
 <tr>
-<td>Taker's payment not in a block by the taker deadline, or reorged out afterwards</td>
-<td>Claim void; order reopens; any claim bond goes to the maker; a maker that already delivered takes the loss</td>
+<td>Deposit: payment not in a block by the taker deadline</td>
+<td>Claim void; order reopens; any claim bond goes to the maker</td>
 </tr>
 <tr>
-<td>Maker's payment not deep by the maker deadline plus 2 blocks of grace</td>
-<td>Maker's bond goes to the taker in full; order cancelled</td>
+<td>Deposit: payment in a block</td>
+<td>Options released to the taker; match closed</td>
 </tr>
 <tr>
-<td>Maker's payment reorged out before it is deep</td>
+<td>Exercise: delivery not deep by the maker deadline plus 2 blocks of grace</td>
+<td>The bond goes to the holder in full</td>
+</tr>
+<tr>
+<td>Exercise: delivery reorged out before it is deep</td>
 <td>Counts as not delivered; same as the row above</td>
 </tr>
 <tr>
-<td>Maker's payment deep</td>
-<td>Bond released, minus the fee, to whoever paid the maker's leg; match closed</td>
+<td>Exercise: delivery deep</td>
+<td>Bond released, minus the fee, to whoever delivered; match closed</td>
 </tr>
 </tbody>
 </table>
-<p>Partial claims prorate the bond.</p>
 <h3>Speed</h3>
-<p>A swap feels done when the taker sees the asset in their wallet, and that happens as soon as the maker fills. A maker whose policy is seen fills within seconds of the taker's payment reaching the mempool; finality and the bond release run in the background and nobody waits for them. The maker fronts its own asset and carries its own risk, which is what makes the speed possible.</p>
-<table>
-<thead>
-<tr>
-<th>Direction</th>
-<th>Taker sees the asset</th>
-<th>Confirmed</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>From a 12-second chain into Bitcoin, maker fills on sight</td>
-<td>BTC in the mempool 5 to 15 s after the claim</td>
-<td>1 Bitcoin block, about 10 min</td>
-</tr>
-<tr>
-<td>From Bitcoin into a 12-second chain, maker fills on sight</td>
-<td>the asset in the next block, about 15 s after the claim</td>
-<td>that chain's next block; final per that chain</td>
-</tr>
-<tr>
-<td>Between 2-second chains, maker fills on sight</td>
-<td>about 5 s</td>
-<td>seconds</td>
-</tr>
-<tr>
-<td>Any pair, maker fills on finality</td>
-<td>13 to 30 min</td>
-<td>same</td>
-</tr>
-</tbody>
-</table>
-<p>The book shows each maker's median fill time, computed from the log as the gap between the taker's ReportPayment and the maker's. Fast makers earn the flow. Nothing enforces the promise except that number, and nothing needs to: the maker has posted the bond, the taker has already paid, and the deadline is the backstop.</p>
-<h3>Why this flow</h3>
-<ol>
-<li>The taker pays first, so takers never need BLRD; only makers bond. A claim before paying means two takers cannot pay the same maker for one order: the second claim waits or goes to the next order. The maker pays once the taker's payment is in a block, and carries only the small reorg risk of recent blocks.</li>
-<li>A slashed bond goes to the counterparty in full: the taker already paid, and nothing is burned. If a third party delivered the maker's leg, the bond goes to them instead, which is what makes the repo worth doing.</li>
-</ol>
-<h3>Bond sizing</h3>
-<p>There is no price oracle, so the protocol cannot judge whether a bond covers an order. The maker sets the bond in BLRD per unit; the interface shows its value from the network's own BLRD markets, and takers see it before they claim. A bond equal to the order's value means a defaulting maker loses exactly what it owed. A premium, say 110%, removes the maker's free option when BLRD falls against the base asset, and makes it worth a third party's while to deliver in the maker's place. Either is the maker's choice in v1.</p>
+<p>Everything that stays on the ledger is done in the time it takes the leader to sign: sends, conversions, trades between options. A deposit takes one block on the coin's chain. An exercise takes however long the issuer takes to pay plus the chain's own finality, and the deadline is the backstop. Most people never exercise: they hold dollars as dollars, pay each other, and let the makers keep the coins.</p>
+<h3>Cover sizing</h3>
+<p>Cover is set by the issuer, in BLRD, pooled across everything it has issued on an asset. Cover equal to the value issued means a defaulting issuer loses exactly what it owed. A premium removes the issuer's free option when BLRD falls against the coin, and makes it worth a third party's while to deliver in the issuer's place. Either is the issuer's choice in v1; the ratio is public and the market prices it.</p>
 <h2>Token economics</h2>
-<p>BLRD has three jobs: back trades (bonds), pay for sequencing (fees to the leader), and reward leaders (issuance). It is never needed to hold or move the external assets.</p>
+<p>BLRD has three jobs: back options (cover), pay for sequencing (fees to the leader), and reward leaders (issuance). It is never needed to hold, move or trade the external assets.</p>
 <h3>Issuance</h3>
-<p>Proposal: each block's leader mints R = Bitcoin's block subsidy at that height, denominated in BLRD. That is 3.125 BLRD per block today, halving when Bitcoin halves, reaching zero around 2140. The curve is already understood by everyone, so nobody has to argue about it. It is minted in an EpochStart entry, one per Bitcoin block, whether or not that block had a lottery: a leader who carries over through quiet blocks earns their rewards too.</p>
-<p>Alternatives: a flat 1 BLRD per block (no halvings to explain), or no issuance at all with a genesis allocation (less boring, more arguing).</p>
+<p>Each block's leader mints R = Bitcoin's block subsidy at that height, denominated in BLRD. That is 3.125 BLRD per block today, halving when Bitcoin halves, reaching zero around 2140. The curve is already understood by everyone, so nobody has to argue about it. It is minted in an EpochStart entry, one per Bitcoin block, whether or not that block had a lottery: a leader who carries over through quiet blocks earns their rewards too.</p>
 <h3>Fees</h3>
 <p>Flat, in BLRD, paid to the leader of the epoch the entry lands in. Flat fees need no oracle.</p>
 <table>
@@ -395,24 +388,20 @@
 </thead>
 <tbody>
 <tr>
-<td>Register, PlaceOrder, CancelOrder, Claim, ReportPayment</td>
+<td>Send, Transfer, SetCurrency, Mint, Burn, PlaceOrder, CancelOrder, Claim, ReportPayment</td>
 <td>0</td>
 </tr>
 <tr>
-<td>Match</td>
-<td>0.001 BLRD, paid by the maker out of the bond at MatchClosed</td>
-</tr>
-<tr>
-<td>Transfer</td>
-<td>0.0001 BLRD</td>
+<td>Exercise</td>
+<td>0.001 BLRD, paid by the issuer out of the cover at MatchClosed</td>
 </tr>
 </tbody>
 </table>
-<p>Placing orders and claiming are free, so the book stays deep and takers never need BLRD. The maker pays a little per match; that is the price of sequencing. Claim spam is handled by a maker-set claim bond or a per-account rate limit, not by a fee. Fees are fixed per software version.</p>
+<p>Using the ledger is free, so the book stays deep and holders never need BLRD. The issuer pays a little per exercise; that is the price of sequencing. Spam is handled by a per-account rate limit, not by a fee. Fees are fixed per software version.</p>
 <h3>Burns</h3>
 <p>Nothing burns in v1. Every slashed bond goes to the party who was owed.</p>
 <h3>How a newcomer gets BLRD</h3>
-<p>Takers never need BLRD, so most people never buy it. A maker buys it on a BLRD market as a taker: claim, pay, and the seller's escrowed BLRD is released when the payment is in a block. Leaders receive all new BLRD, so they are the natural first sellers. No faucet, no airdrop, no presale.</p>
+<p>Holders never need BLRD, so most people never buy it. A maker buys it on a BLRD market like any other option trade, or by deposit. Leaders receive all new BLRD, so they are the natural first sellers. No faucet, no airdrop, no presale.</p>
 <h2>Nodes</h2>
 <p>A node follows Bitcoin, replays the log, keeps the state, and watches the chains it trades on. Everything specific to a chain lives in that chain's adapter.</p>
 <h3>Modes</h3>
@@ -474,24 +463,29 @@
 <td>Users wait the depth they want, as on Bitcoin</td>
 </tr>
 <tr>
-<td>Maker takes the payment and never delivers</td>
-<td>Taker is out the payment</td>
-<td>Maker's bond goes to the taker in full; anyone may deliver in the maker's place and take the bond</td>
+<td>Issuer never delivers on exercise</td>
+<td>Holder is out the coin</td>
+<td>The issuer's cover goes to the holder in full; anyone may deliver in the issuer's place and take the bond</td>
 </tr>
 <tr>
-<td>Thin bonds</td>
-<td>A maker defaults when the price moves against it</td>
-<td>Makers set bonds and takers see them before claiming; a premium bond makes third-party delivery worthwhile; a protocol minimum from the internal BLRD markets later</td>
+<td>Thin cover</td>
+<td>An issuer defaults when the price moves against it</td>
+<td>Cover ratios are public and priced by the market; a premium makes third-party delivery worthwhile; a protocol minimum from the internal BLRD markets later</td>
 </tr>
 <tr>
-<td>Claim and never pay (griefing)</td>
+<td>Issuer over-issues</td>
+<td>Cover is spread thinner than holders expected</td>
+<td>Cover is pooled and pro rata, so every holder sees the same ratio; options from a thin issuer trade at a discount or are refused</td>
+</tr>
+<tr>
+<td>Claim a deposit and never pay (griefing)</td>
 <td>A maker's order is locked for 3 minutes</td>
 <td>Claim expires and the order reopens; a maker-set claim bond goes to the maker; per-account rate limit</td>
 </tr>
 <tr>
-<td>Maker fills on sight (policy seen)</td>
-<td>The taker replaces the unconfirmed payment and keeps both sides</td>
-<td>The maker's choice, priced into its spread; cap by size; on Bitcoin, only for payments that do not signal replace-by-fee</td>
+<td>Deposit payment reorged out after inclusion</td>
+<td>The taker keeps options it did not pay for</td>
+<td>Deposit makers set their chain's depth and a claim bond; small by construction since options are released only at inclusion</td>
 </tr>
 <tr>
 <td>Unreachable or DoS'd leader</td>
@@ -499,9 +493,9 @@
 <td>Failover to the next ranked entry, then the previous leader; the leader's IP is public by design, so run it like any public server</td>
 </tr>
 <tr>
-<td>Taker's payment reorged out after inclusion</td>
-<td>A maker that already delivered is out the fill</td>
-<td>Rare, and not cheaply caused; the maker prices it into its spread. A cover mechanism can socialize it; open question</td>
+<td>Lost passkey</td>
+<td>The account is unreachable</td>
+<td>Passkeys sync through the platform's store; a second passkey on the same account is a v2 option</td>
 </tr>
 </tbody>
 </table>
@@ -539,22 +533,22 @@
 <tr>
 <td>Claim window</td>
 <td>3 minutes of leader time</td>
-<td>Enough to broadcast a payment; a dead claim costs the maker little</td>
+<td>Enough to broadcast a deposit payment; a dead claim costs the maker little</td>
 </tr>
 <tr>
-<td>Deep (bond release)</td>
+<td>Deep (cover release)</td>
 <td>per chain, set by its adapter, at or beyond the chain's own finality (3 confirmations on Bitcoin)</td>
-<td>Gates only the bond release; nobody else waits for it</td>
+<td>Gates only the cover release on exercise; nobody else waits for it</td>
 </tr>
 <tr>
 <td>Taker deadline</td>
-<td>per chain, set by its adapter; counted in Bitcoin blocks from the claim</td>
+<td>per chain, set by its adapter; counted in Bitcoin blocks from a deposit claim</td>
 <td>Payment in a block by then, or the claim is void</td>
 </tr>
 <tr>
 <td>Maker deadline</td>
-<td>per chain, set by its adapter; counted in Bitcoin blocks from the taker's LegIncluded</td>
-<td>Then the bond goes to the taker</td>
+<td>per chain, set by its adapter; counted in Bitcoin blocks from an exercise</td>
+<td>Then the cover goes to the holder</td>
 </tr>
 <tr>
 <td>Grace G</td>
@@ -567,14 +561,24 @@
 <td>Known curve, no debate</td>
 </tr>
 <tr>
-<td>Match fee</td>
-<td>0.001 BLRD, paid by the maker</td>
-<td>Sequencing has a price; takers pay nothing</td>
+<td>Exercise fee</td>
+<td>0.001 BLRD, paid by the issuer out of cover</td>
+<td>Sequencing has a price; holders pay nothing</td>
 </tr>
 <tr>
-<td>Transfer fee</td>
-<td>0.0001 BLRD</td>
-<td>Spam transfers have a cost</td>
+<td>Ledger fees</td>
+<td>0</td>
+<td>Sends, trades and conversions are free</td>
+</tr>
+<tr>
+<td>Account keys</td>
+<td>secp256k1 (33 bytes) or P-256 passkey (65 bytes)</td>
+<td>Nodes use the first; people use the second</td>
+</tr>
+<tr>
+<td>Default currency</td>
+<td>USD (USDC on Ethereum)</td>
+<td>What most people mean by money</td>
 </tr>
 <tr>
 <td>Dust minimums</td>
@@ -588,7 +592,7 @@
 </tr>
 <tr>
 <td>Suggested finality</td>
-<td>1 block for trades, 6 for large BLRD transfers</td>
+<td>1 block for ordinary sends and trades, 6 for large ones</td>
 <td>Users choose, as on Bitcoin</td>
 </tr>
 </tbody>

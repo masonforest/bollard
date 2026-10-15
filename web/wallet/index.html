@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bollard</title>
+<meta name="description" content="Send, receive and swap across chains. Instant, free, backed by bonded makers and finalized on Bitcoin.">
+<script type="importmap">
+{ "imports": {
+  "flatbuffers": "https://unpkg.com/flatbuffers@25.2.10/mjs/flatbuffers.js",
+  "@noble/secp256k1": "https://unpkg.com/@noble/secp256k1@2.2.3/index.js"
+} }
+</script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+:root { --fg: #111; --bg: #fff; --muted: #888; --line: #e4e4e4; --accent: #1f5fbf; --on-accent: #fff; --ok: #16a34a; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #111; --muted: #777; --line: #2a2a2a; --accent: #6ea0ff; --on-accent: #06152b; --ok: #22c55e; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+main { max-width: 400px; margin: 0 auto; padding: calc(48px + env(safe-area-inset-top)) 24px calc(96px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 28px; }
+h1 { text-align: center; font-size: 54px; font-weight: 500; letter-spacing: -0.03em; margin: 0; line-height: 1.1; font-variant-numeric: tabular-nums; }
+h2 { font-size: 22px; font-weight: 500; margin: 0; text-align: center; }
+p { margin: 0; }
+.center { text-align: center; }
+.muted { color: var(--muted); font-size: 15px; }
+.muted a { color: inherit; }
+.row { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+.row.center { justify-content: center; }
+.row.between { justify-content: space-between; }
+.row.fill { flex-wrap: nowrap; gap: 8px; }
+.row.fill button { flex: 1; padding: 8px 12px; font-size: 15px; white-space: nowrap; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.stack.center { align-items: center; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.label { font-size: 13px; color: var(--muted); }
+button, .button { font: inherit; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 999px; padding: 10px 20px; cursor: pointer; text-decoration: none; display: inline-block; }
+button.primary { background: var(--accent); color: var(--on-accent); }
+button.link { border: 0; padding: 0; color: var(--muted); }
+button:disabled { opacity: 0.4; cursor: default; }
+input, select { font: inherit; color: var(--fg); background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 0; width: 100%; outline: none; border-radius: 0; }
+input:focus, select:focus { border-color: var(--accent); }
+input.amount { font-size: 40px; font-weight: 500; letter-spacing: -0.02em; }
+.error { color: #c33; font-size: 15px; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); align-items: baseline; }
+li .sub { display: block; color: var(--muted); font-size: 13px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
+.qr svg { display: block; width: 180px; border-radius: 8px; background: #fff; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+nav { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); display: flex; justify-content: center; gap: 4px; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); }
+nav button { border: 0; border-radius: 0; padding: 6px 8px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; }
+nav button.active { color: var(--accent); }
+.pill { display: inline-block; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.success { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0; }
+.success .ring { fill: var(--ok); transform-origin: 60px 60px; animation: pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
+.success .tick { fill: none; stroke: #fff; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 90; stroke-dashoffset: 90; animation: draw .5s .35s ease-out forwards; }
+@keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.assets li { border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main></main>
+<nav hidden></nav>
+<script type="module">
+import { TxType, hex, signers, submit, createPasskey, signInPasskey } from '/dashboard/wire.js';
+
+// ----- node -----
+const BASE_DOMAIN = location.hostname.replace(/^(app|www)\./, '');
+let api = (location.port || location.hostname.startsWith('mainnet.') || location.hostname === 'localhost') ? '' : 'https://mainnet.' + BASE_DOMAIN;
+const j = async (path, body) => {
+  const res = await fetch(api + path, body && { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `${path} failed`);
+  return data;
+};
+const stored = (k) => JSON.parse(localStorage.getItem(k) || 'null');
+const store = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+// ----- units -----
+const assets = {};
+const NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'US Dollar', 'eth:USDT': 'Tether', 'BLRD': 'Bollard' };
+const SYMBOL = { 'eth:USDC': '$', 'eth:USDT': '₮', 'btc:BTC': '₿', 'eth:ETH': 'Ξ', 'BLRD': 'ʙ' };
+const CHAIN = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
+function toAtoms(human, id) {
+  const a = assets[id]; const s = String(human).trim();
+  if (!/^\d*\.?\d*$/.test(s) || s === '' || s === '.') throw new Error('Enter an amount.');
+  const [i, f = ''] = s.split('.');
+  if (f.length > a.decimals) throw new Error(`At most ${a.decimals} decimals for ${a.symbol}.`);
+  return BigInt(i || '0') * 10n ** BigInt(a.decimals) + BigInt((f + '0'.repeat(a.decimals)).slice(0, a.decimals) || '0');
+}
+function human(atoms, id, digits) {
+  const a = assets[id]; if (!a) return String(atoms);
+  const s = BigInt(atoms).toString().padStart(a.decimals + 1, '0');
+  let t = s.slice(0, -a.decimals) + '.' + s.slice(-a.decimals);
+  if (digits !== undefined) t = Number(t).toFixed(digits); else t = t.replace(/\.?0+$/, '');
+  return t;
+}
+const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT') ? `${SYMBOL[id]}${human(atoms, id, 2)}` : `${human(atoms, id)} ${assets[id]?.symbol || id}`;
+const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');
+
+// ----- state -----
+const state = { key: stored('bollard.passkey'), view: 'home', info: null, busy: false, error: '', activity: null, deposit: null, success: null, book: null };
+const me = () => state.key?.pubkey;
+const signer = () => signers.passkey(state.key);
+const currency = () => state.info?.preferred || 'eth:USDC';
+const main = document.querySelector('main');
+const nav = document.querySelector('nav');
+
+async function refresh() {
+  if (!state.key) return render();
+  state.info = await j(`/balances/${me()}`);
+  render();
+}
+async function run(fn) {
+  state.busy = true; state.error = ''; render();
+  try { await fn(); } catch (e) { state.error = e.message || String(e); }
+  state.busy = false; render();
+}
+async function tx(type, body) { return submit(api, signer(), type, body); }
+
+// ----- actions -----
+const actions = {
+  create: () => run(async () => {
+    const key = await createPasskey('Bollard');
+    await j('/keys', { cred_id: key.id, pubkey: key.pubkey });
+    store('bollard.passkey', key); state.key = key;
+    await refresh();
+  }),
+  signin: () => run(async () => {
+    const id = await signInPasskey(stored('bollard.passkey')?.id);
+    const key = stored('bollard.passkey')?.id === id ? stored('bollard.passkey') : { id, pubkey: (await j(`/keys/${id}`)).pubkey };
+    store('bollard.passkey', key); state.key = key;
+    await refresh();
+  }),
+  signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
+  tab: (el) => { state.view = el.dataset.value; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
+  copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
+  currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
+  depositAsset: (el) => { state.deposit = { asset: el.dataset.value }; loadDeposit(); render(); },
+  cancelDeposit: () => { state.deposit = null; render(); },
+};
+const forms = {
+  send: (form) => run(async () => {
+    const to = form.to.value.trim().toLowerCase();
+    if (!/^[0-9a-f]{66}$|^[0-9a-f]{130}$/.test(to)) throw new Error('That is not an account id.');
+    const asset = currency();
+    const amount = toAtoms(form.amount.value, asset);
+    if (amount <= 0n) throw new Error('Enter an amount.');
+    await tx(TxType.Send, { to: hex.dec(to), asset, amount });
+    state.success = `Sent ${money(amount, asset)}`; state.view = 'home';
+    await refresh();
+  }),
+  withdraw: (form) => run(async () => {
+    const asset = form.asset.value; const amount = toAtoms(form.amount.value, asset);
+    const address = form.to.value.trim();
+    if (!address) throw new Error('Enter the address to deliver to.');
+    await tx(TxType.Exercise, { asset, quantity: amount, receive_address: address });
+    state.success = `Withdrawing ${money(amount, asset)}: a maker delivers to ${short(address, 12)} shortly.`; state.view = 'home';
+    await refresh();
+  }),
+  deposit: (form) => run(async () => {
+    const d = state.deposit; const amount = toAtoms(form.amount.value, d.asset);
+    const o = d.order; if (!o) throw new Error('No maker is taking deposits in this currency right now.');
+    const qty = amount > BigInt(o.qty_left) ? BigInt(o.qty_left) : amount;
+    const out = await tx(TxType.Claim, { order_id: hex.dec(o.id), quantity: qty, receive_address: '' });
+    const ms = await j(`/matches?account=${me()}&kind=deposit&limit=5`);
+    const m = ms.find((x) => x.id === out.hash);
+    d.match = m; d.watching = true; render(); watchDeposit();
+  }),
+};
+
+// ----- deposit: find a maker selling options for on-chain payment, then watch the chain -----
+async function loadDeposit() {
+  const d = state.deposit || (state.deposit = { asset: currency() });
+  if (d.match) return;
+  const b = await j(`/book?market=${encodeURIComponent(d.asset + '/' + d.asset)}`).catch(() => null);
+  d.order = b?.deposits?.[0] || null; render();
+}
+async function watchDeposit() {
+  const d = state.deposit;
+  while (d && d.match && d.watching) {
+    try {
+      const r = await j(`/find-payment?match=${d.match.id}&leg=0`);
+      if (r.txid && !r.reported) { await tx(TxType.ReportPayment, { match_id: hex.dec(d.match.id), leg: 0, txid: r.txid }); }
+      const ms = await j(`/matches?account=${me()}&kind=deposit&limit=10`);
+      const m = ms.find((x) => x.id === d.match.id); if (m) d.match = m;
+      if (m && m.status !== 'open') { d.watching = false; if (m.status === 'closed') { state.success = `Deposited ${money(m.maker_amount, m.maker_asset)}`; state.deposit = null; state.view = 'home'; } await refresh(); return; }
+      render();
+    } catch {}
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+}
+async function loadActivity() { if (me()) { state.activity = await j(`/activity/${me()}`); render(); } }
+
+// ----- views -----
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const qrSvg = (text) => { try { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 2 }); } catch { return ''; } };
+const balanceOf = (id) => (id === 'BLRD' ? BigInt(state.info?.blrd || 0) : BigInt(state.info?.assets?.find((a) => a.asset === id)?.amount || 0));
+
+function render() {
+  nav.hidden = !state.key;
+  if (!state.key) {
+    main.innerHTML = `
+      <div class="stack center" style="gap:20px;margin-top:40px">
+        <h2>Bollard</h2>
+        <p class="center muted">Send and receive dollars, bitcoin and more. Instant, free, no custody: balances are promises bonded by makers and finalized on Bitcoin.</p>
+        <button class="primary" data-action="create">Create account</button>
+        <button class="link" data-action="signin">I already have one</button>
+        ${state.error ? `<p class="error">${esc(state.error)}</p>` : ''}
+        <p class="muted center"><a href="https://bollard.exchange/">About Bollard</a> · <a href="/dashboard/">Pro</a></p>
+      </div>`;
+    return;
+  }
+  const v = views[state.view] || views.home;
+  main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
+  nav.innerHTML = ['home', 'send', 'receive', 'deposit', 'withdraw', 'activity', 'settings'].map((t) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('');
+}
+const views = {
+  home: () => {
+    const c = currency(); const others = (state.info?.assets || []).filter((a) => a.asset !== c && a.amount > 0);
+    const blrd = BigInt(state.info?.blrd || 0);
+    return `
+      ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
+      <div class="stack center">
+        <h1>${money(balanceOf(c), c)}</h1>
+        <p class="muted">${NAMES[c] || c} · ${CHAIN[assets[c]?.chain] || ''}</p>
+      </div>
+      <div class="row fill"><button class="primary" data-action="tab" data-value="send">Send</button><button data-action="tab" data-value="receive">Receive</button></div>
+      ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
+      <p class="muted center">Sending to someone who uses another currency converts on the way at the best price on the book.</p>`;
+  },
+  send: () => `
+    <h2>Send ${assets[currency()]?.symbol || ''}</h2>
+    <form data-form="send" class="stack">
+      <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
+      <div class="field"><span class="label">To (account id)</span><input name="to" class="mono" placeholder="paste their account id" autocomplete="off" spellcheck="false" required></div>
+      <p class="muted">Available: ${money(balanceOf(currency()), currency())}. Arrives instantly, in their currency.</p>
+      <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Send</button>
+    </form>`,
+  receive: () => `
+    <h2>Receive</h2>
+    <div class="stack center">
+      <div class="qr">${qrSvg(me())}</div>
+      <p class="mono">${me()}</p>
+      <button data-action="copy" data-text="${me()}" data-label="Copy account id">Copy account id</button>
+      <p class="muted center">Share this id. Whatever they send arrives as ${NAMES[currency()] || currency()}. To bring in coins from a chain, use Deposit.</p>
+    </div>`,
+  deposit: () => {
+    const d = state.deposit || { asset: currency() };
+    const a = assets[d.asset];
+    if (d.match) {
+      const m = d.match;
+      return `
+        <h2>Pay ${money(m.taker_amount, m.taker_asset)}</h2>
+        <div class="stack center">
+          <div class="qr">${qrSvg(assets[m.taker_asset]?.chain === 'btc' ? `bitcoin:${m.taker_pay_to}?amount=${human(m.taker_amount, m.taker_asset)}` : m.taker_pay_to)}</div>
+          <p class="mono">${m.taker_pay_to}</p>
+          <button data-action="copy" data-text="${m.taker_pay_to}" data-label="Copy address">Copy address</button>
+          <p class="muted center">Send exactly that amount on ${CHAIN[assets[m.taker_asset]?.chain]}. ${m.taker_txid ? `Payment ${short(m.taker_txid, 12)} seen; waiting for a block.` : 'Watching the chain; nothing to paste.'}</p>
+          <button class="link" data-action="cancelDeposit">Back</button>
+        </div>`;
+    }
+    const opts = Object.values(assets).filter((x) => x.chain !== 'blrd');
+    return `
+      <h2>Deposit</h2>
+      <div class="row center">${opts.map((x) => `<button class="${x.id === d.asset ? 'primary' : ''} pill" data-action="depositAsset" data-value="${x.id}">${x.symbol}</button>`).join('')}</div>
+      ${d.order ? `
+      <form data-form="deposit" class="stack">
+        <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
+        <p class="muted">A maker takes up to ${money(d.order.qty_left, d.asset)}${Number(d.order.price) !== 1e8 ? ` at ${Number(d.order.price) / 1e8} per unit` : ''} and credits you once your payment is in a block.</p>
+        <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Get a payment address</button>
+      </form>` : `<p class="muted center">No maker is taking ${a?.symbol || ''} deposits right now.</p>`}`;
+  },
+  withdraw: () => {
+    const held = (state.info?.assets || []).filter((x) => x.amount > 0);
+    return `
+      <h2>Withdraw</h2>
+      ${held.length ? `
+      <form data-form="withdraw" class="stack">
+        <div class="field"><span class="label">Currency</span><select name="asset">${held.map((x) => `<option value="${x.asset}">${NAMES[x.asset] || x.asset} · ${money(x.amount, x.asset)}</option>`).join('')}</select></div>
+        <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
+        <div class="field"><span class="label">Deliver to (address on that chain)</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
+        <p class="muted">The maker who issued these delivers the real coins; their bond pays you if they don't.</p>
+        <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Withdraw</button>
+      </form>` : '<p class="muted center">Nothing to withdraw yet.</p>'}`;
+  },
+  activity: () => {
+    const act = state.activity; if (!act) return '<h2>Activity</h2><p class="muted center"><span class="spinner"></span>Loading…</p>';
+    const rows = [];
+    for (const t of act.transfers) {
+      const out = t.sender === me();
+      rows.push({ seq: t.seq, ts: t.ts, label: out ? 'Sent' : 'Received', value: out ? `−${money(t.amount, t.asset)}` : `+${money(t.delivered, t.delivered_asset)}`, sub: out && t.delivered_asset !== t.asset ? `arrived as ${money(t.delivered, t.delivered_asset)}` : short(out ? t.receiver : t.sender, 12) });
+    }
+    const sendSeqs = new Set(act.transfers.map((t) => t.seq));
+    for (const m of act.matches) {
+      if (m.kind === 'trade' && sendSeqs.has(m.seq)) continue; // the conversion inside a send is shown on the send itself
+      if (m.kind === 'deposit' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Deposit', value: `+${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? 'done' : m.status === 'open' ? (m.taker_txid ? 'payment seen, waiting for a block' : 'waiting for your payment') : m.status });
+      else if (m.kind === 'exercise' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Withdrawal', value: `−${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? 'delivered' : m.status === 'open' ? (m.maker_txid ? 'delivery sent, waiting for a block' : 'waiting for the maker to deliver') : m.status === 'missed' ? 'maker failed; their bond was paid to you' : m.status });
+      else if (m.kind === 'trade' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Swap', value: `${money(m.taker_amount, m.taker_asset)} → ${money(m.maker_amount, m.maker_asset)}`, sub: 'instant' });
+    }
+    rows.sort((a, b) => b.seq - a.seq);
+    return `<h2>Activity</h2>${rows.length ? `<ul>${rows.map((r) => `<li><span>${r.label}<span class="sub">${esc(r.sub)} · ${new Date(r.ts).toLocaleString()}</span></span><span>${r.value}</span></li>`).join('')}</ul>` : '<p class="muted center">Nothing yet.</p>'}`;
+  },
+  settings: () => `
+    <h2>Settings</h2>
+    <div class="stack">
+      <span class="label">Your currency</span>
+      <div class="row">${Object.values(assets).map((x) => `<button class="pill ${x.id === currency() ? 'primary' : ''}" data-action="currency" data-value="${x.id}">${NAMES[x.id] || x.id}</button>`).join('')}</div>
+      <p class="muted">What you see your balance in and what you receive. Anything sent to you in another currency is converted on the way.</p>
+      <span class="label">Account</span>
+      <p class="mono">${me()}</p>
+      <p class="muted">Signed in with a passkey. The same passkey signs you in on your other devices.</p>
+      <button data-action="signout">Sign out</button>
+      <p class="muted"><a href="/dashboard/">Pro: order book, charts, market making</a></p>
+    </div>`,
+};
+
+// ----- wiring -----
+main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
+nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
+main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.target.dataset.form]; if (fn) fn(e.target); });
+
+(async () => {
+  if (api) { try { const r = await fetch(api + '/status', { signal: AbortSignal.timeout(4000) }); if (!r.ok) api = ''; } catch { api = ''; } }
+  const m = await j('/markets'); for (const a of m.assets) assets[a.id] = a;
+  render();
+  try { await refresh(); } catch (e) { state.error = e.message; render(); }
+  const es = new EventSource(api + '/events');
+  es.onmessage = () => { if (state.key) refresh().catch(() => {}); };
+  setInterval(() => { if (state.key) refresh().catch(() => {}); }, 20000);
+})();
+</script>
+</body>
+</html>

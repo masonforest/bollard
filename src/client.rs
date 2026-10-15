@@ -61,6 +61,48 @@ pub enum TxCmd {
         /// Bitcoin height at which the order cancels itself
         #[arg(long)]
         expiry_height: u32,
+        /// ledger (both sides settle instantly) or chain (the taker pays on chain)
+        #[arg(long, default_value = "ledger")]
+        settle: String,
+    },
+    /// Issue options on an asset you will deliver on demand, locking a BLRD bond
+    Mint {
+        #[arg(long)]
+        asset: String,
+        #[arg(long)]
+        quantity: u64,
+        #[arg(long, default_value_t = 0)]
+        bond: u64,
+    },
+    /// Destroy options you issued and hold, freeing their share of your bond
+    Burn {
+        #[arg(long)]
+        asset: String,
+        #[arg(long)]
+        quantity: u64,
+    },
+    /// Send BLRD or options to an account; the ledger converts to their currency
+    Send {
+        #[arg(long)]
+        to: String,
+        #[arg(long)]
+        asset: String,
+        #[arg(long)]
+        amount: u64,
+    },
+    /// Burn options and have the real asset delivered to an address
+    Exercise {
+        #[arg(long)]
+        asset: String,
+        #[arg(long)]
+        quantity: u64,
+        #[arg(long)]
+        receive_address: String,
+    },
+    /// The currency you want to receive in
+    SetCurrency {
+        #[arg(long)]
+        asset: String,
     },
     /// Cancel an order's unclaimed remainder
     Cancel {
@@ -132,7 +174,7 @@ pub async fn tx(a: TxArgs) -> Result<()> {
     };
     let body = match a.cmd {
         TxCmd::Transfer { to, amount } => TxBody::Transfer { to: hex::decode(to)?, amount },
-        TxCmd::PlaceOrder { market, side: s, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height } => TxBody::PlaceOrder {
+        TxCmd::PlaceOrder { market, side: s, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle } => TxBody::PlaceOrder {
             market,
             side: side(&s)?,
             quantity,
@@ -142,7 +184,17 @@ pub async fn tx(a: TxArgs) -> Result<()> {
             fill_policy: policy(&fill_policy)?,
             receive_address,
             expiry_height,
+            settle: match settle.as_str() {
+                "ledger" | "0" => 0,
+                "chain" | "1" => 1,
+                _ => bail!("settle must be ledger or chain"),
+            },
         },
+        TxCmd::Mint { asset, quantity, bond } => TxBody::Mint { asset, quantity, bond },
+        TxCmd::Burn { asset, quantity } => TxBody::Burn { asset, quantity },
+        TxCmd::Send { to, asset, amount } => TxBody::Send { to: hex::decode(to)?, asset, amount },
+        TxCmd::Exercise { asset, quantity, receive_address } => TxBody::Exercise { asset, quantity, receive_address },
+        TxCmd::SetCurrency { asset } => TxBody::SetCurrency { asset },
         TxCmd::Cancel { order } => TxBody::CancelOrder { order_id: hex::decode(order)? },
         TxCmd::Claim { order, quantity, receive_address } => TxBody::Claim { order_id: hex::decode(order)?, quantity, receive_address },
         TxCmd::Report { match_id, leg, txid } => TxBody::ReportPayment {

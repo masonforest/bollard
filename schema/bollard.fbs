@@ -19,6 +19,7 @@ table PlaceOrder {
   fill_policy: ubyte;      // 0 = seen, 1 = included, 2 = final
   receive_address: string; // maker's address on the chain of the asset it is buying
   expiry_height: uint32;   // Bitcoin height at which the order cancels itself
+  settle: ubyte;           // 0 = both legs are ledger options (instant); 1 = the taker pays on chain
 }
 
 table CancelOrder { order_id: [ubyte]; }
@@ -29,12 +30,31 @@ table Claim { order_id: [ubyte]; quantity: uint64; receive_address: string; }
 // Report the txid that pays a leg. Anyone may report the maker's leg.
 table ReportPayment { match_id: [ubyte]; leg: ubyte; txid: string; } // leg: 0 = taker, 1 = maker
 
-union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment }
+// ---- options: bonded delivery promises that live on the ledger
+
+// An issuer creates `quantity` options on `asset` for itself, locking `bond`
+// BLRD as cover for everything it has issued on that asset.
+table Mint { asset: string; quantity: uint64; bond: uint64; }
+// An issuer destroys options it holds and frees the matching share of cover.
+table Burn { asset: string; quantity: uint64; }
+// Send options (or BLRD when asset is "BLRD") to another account. If the
+// recipient prefers another currency the ledger swaps on the way.
+table Send { to: [ubyte]; asset: string; amount: uint64; }
+// Burn options and demand delivery of the real asset to receive_address.
+table Exercise { asset: string; quantity: uint64; receive_address: string; }
+// The currency an account wants to receive in.
+table SetCurrency { asset: string; }
+
+union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment, Mint, Burn, Send, Exercise, SetCurrency }
 
 table Tx { account: [ubyte]; nonce: uint64; body: TxBody; }
 
-// tx = the Tx bytes exactly as signed; sig = 64-byte compact ECDSA over SHA256(tx).
-table SignedTx { tx: [ubyte] (nested_flatbuffer: "Tx"); sig: [ubyte]; }
+// tx = the Tx bytes exactly as signed. For a 33-byte secp256k1 account, sig is
+// a 64-byte compact ECDSA signature over SHA256(tx). For a 65-byte P-256
+// account (a passkey), sig is r||s over SHA256(auth_data || SHA256(client_data)),
+// where client_data is the WebAuthn clientDataJSON whose challenge is the
+// base64url of SHA256(tx).
+table SignedTx { tx: [ubyte] (nested_flatbuffer: "Tx"); sig: [ubyte]; auth_data: [ubyte]; client_data: [ubyte]; }
 
 // ---------------------------------------------------------------- leader assertions
 

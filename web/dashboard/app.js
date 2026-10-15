@@ -1,4 +1,4 @@
-import { TxType, hex, randomSecret, pubkeyOf, isSecret, send } from './wire.js';
+import { TxType, hex, signers, submit, createPasskey, signInPasskey } from './wire.js';
 
 // ------------------------------------------------------------------ setup
 const BASE_DOMAIN = location.hostname.replace(/^(app|www)\./, '');
@@ -37,31 +37,46 @@ function priceFromHuman(human, base, quote) {
 const fmt = (n, d = 8) => Number(n).toLocaleString(undefined, { maximumSignificantDigits: d });
 const quoteAmount = (qty, price) => (BigInt(qty) * BigInt(price)) / 100000000n;
 
-// ------------------------------------------------------------------ account
-const KEY = 'bollard.secret';
-let secret = null;
-try { secret = localStorage.getItem(KEY); if (secret && !isSecret(secret)) secret = null; } catch {}
-const me = () => (secret ? hex.enc(pubkeyOf(secret)) : null);
-function setSecret(s) { secret = s; try { localStorage.setItem(KEY, s); } catch {} renderAccount(); }
-function ensureKey() { if (!secret) setSecret(randomSecret()); return secret; }
+// ------------------------------------------------------------------ account (passkey, shared with the wallet)
+const KEY = 'bollard.passkey';
+let key = null;
+try { key = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch {}
+const me = () => key?.pubkey || null;
+function setKey(k) { key = k; try { if (k) localStorage.setItem(KEY, JSON.stringify(k)); else localStorage.removeItem(KEY); } catch {} renderAccount(); }
+const signer = () => { if (!key) throw new Error('Sign in first (top right).'); return signers.passkey(key); };
+const send = (api, _unused, type, body) => submit(api, signer(), type, body);
+function ensureKey() { if (!key) { $('account').showModal(); throw new Error('Sign in first (top right).'); } return key; }
 async function renderAccount() {
   const pk = me();
-  $('account-btn').textContent = pk ? short(pk, 12) : 'no key';
-  $('a-pub').textContent = pk || '(none yet)';
-  $('a-secret').textContent = secret || '';
+  $('account-btn').textContent = pk ? short(pk, 12) : 'Sign in';
+  $('a-pub').textContent = pk || '(not signed in)';
+  $('a-signed').classList.toggle('hidden', !pk);
+  $('a-unsigned').classList.toggle('hidden', !!pk);
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
     const bal = a ? fromAtoms(a.balance, 'BLRD') : '?';
     $('a-balance').textContent = a ? `${bal} (${fromAtoms(a.locked, 'BLRD')} locked, nonce ${a.nonce})` : '?';
     $('my-blrd').textContent = bal;
-  } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; }
+    const b = await j(`/balances/${pk}`).catch(() => null);
+    $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)} (cover ${fromAtoms(x.cover, 'BLRD')})</span></div>`)].join('') : '';
+  } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
-$('account-btn').onclick = () => { ensureKey(); renderAccount(); $('account').showModal(); };
+$('account-btn').onclick = () => { renderAccount(); $('account').showModal(); };
 $('a-close').onclick = () => $('account').close();
 $('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');
-$('a-show').onclick = () => $('a-secret-box').classList.toggle('hidden');
-$('a-new').onclick = () => { if (confirm('Make a new key? The current one stays only if you backed up its secret.')) { setSecret(randomSecret()); $('a-secret-box').classList.add('hidden'); } };
-$('a-import-btn').onclick = () => { const v = $('a-import').value.trim(); if (!isSecret(v)) { alert('not a valid secret'); return; } setSecret(v); $('a-import').value = ''; };
+$('a-create').onclick = async () => {
+  $('a-error').textContent = '';
+  try { const k = await createPasskey('Bollard'); await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) }); setKey(k); } catch (e) { $('a-error').textContent = e.message; }
+};
+$('a-signin').onclick = async () => {
+  $('a-error').textContent = '';
+  try {
+    const id = await signInPasskey();
+    const r = await fetch(`${api}/keys/${encodeURIComponent(id)}`); if (!r.ok) throw new Error('That passkey is not registered with this node.');
+    setKey({ id, pubkey: (await r.json()).pubkey });
+  } catch (e) { $('a-error').textContent = e.message; }
+};
+$('a-signout').onclick = () => { setKey(null); };
 
 // ------------------------------------------------------------------ modes
 const MODE = 'bollard.mode';
@@ -92,6 +107,7 @@ async function loadStatus() {
 async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
+  $('i-asset').innerHTML = marketsInfo.assets.filter((a) => a.chain !== 'blrd').map((a) => `<option value="${a.id}">${a.symbol} (${a.chain})</option>`).join('');
   renderTokenButtons();
   buildPicker();
 }
@@ -367,7 +383,7 @@ async function loadChart() {
 function orderRow(o, cls) {
   const tr = document.createElement('tr');
   const [base, q] = o.market.split('/');
-  tr.innerHTML = `<td class="mono ${cls}">${short(o.id)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${fromAtoms(o.bond_left || o.qty_left, 'BLRD')}</td><td>${policy[o.fill_policy]}</td>`;
+  tr.innerHTML = `<td class="mono ${cls}">${short(o.id)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${o.settle === 0 ? 'escrowed' : fromAtoms(o.bond_left, 'BLRD') + ' BLRD'}</td><td>${policy[o.fill_policy]}</td>`;
   return tr;
 }
 function marketProblem() {
@@ -396,6 +412,16 @@ function updateRecvHint() {
   const bondRow = $('o-bond').parentElement; bondRow.style.opacity = base === 'BLRD' && $('o-side').value === '1' ? .4 : 1;
 }
 $('o-side').onchange = updateRecvHint;
+$('o-settle').onchange = () => { const dep = $('o-settle').value === '1'; $('o-recv').parentElement.classList.toggle('hidden', !dep); $('o-bond').parentElement.classList.toggle('hidden', dep); $('o-claim-bond').parentElement.classList.toggle('hidden', !dep); if (dep) $('o-side').value = '1'; };
+$('issue-form').onsubmit = async (ev) => {
+  ev.preventDefault(); $('i-error').textContent = '';
+  try {
+    const asset = $('i-asset').value; const quantity = toAtoms($('i-qty').value, asset);
+    if ($('i-kind').value === 'mint') await send(api, ensureKey(), TxType.Mint, { asset, quantity, bond: toAtoms($('i-bond').value || '0', 'BLRD') });
+    else await send(api, ensureKey(), TxType.Burn, { asset, quantity });
+    $('i-qty').value = ''; renderAccount(); loadPro();
+  } catch (e) { $('i-error').textContent = e.message; }
+};
 $('order-form').onsubmit = async (ev) => {
   ev.preventDefault(); $('o-error').textContent = '';
   try {
@@ -409,6 +435,7 @@ $('order-form').onsubmit = async (ev) => {
       fill_policy: Number($('o-fill').value),
       receive_address: $('o-recv').value.trim(),
       expiry_height: (status?.bitcoin?.height || 0) + Number($('o-expiry').value || 144),
+      settle: Number($('o-settle').value),
     };
     const out = await send(api, ensureKey(), TxType.PlaceOrder, body);
     $('o-total').textContent = `placed ${short(out.hash)}`;
@@ -428,7 +455,7 @@ async function loadMine() {
   $('my-orders').replaceChildren(...os.map((o) => {
     const tr = document.createElement('tr'); const [base, q] = o.market.split('/');
     tr.innerHTML = `<td class="mono">${short(o.id)}</td><td>${o.market}</td><td>${o.side ? 'sell' : 'buy'}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.bond_left, 'BLRD')}</td><td>${o.status}</td><td></td>`;
-    if (o.status === 'open') { const b = document.createElement('button'); b.className = 'small'; b.textContent = 'Cancel'; b.onclick = async () => { try { await send(api, secret, TxType.CancelOrder, { order_id: hex.dec(o.id) }); loadPro(); } catch (e) { alert(e.message); } }; tr.lastElementChild.appendChild(b); }
+    if (o.status === 'open') { const b = document.createElement('button'); b.className = 'small'; b.textContent = 'Cancel'; b.onclick = async () => { try { await send(api, null, TxType.CancelOrder, { order_id: hex.dec(o.id) }); loadPro(); } catch (e) { alert(e.message); } }; tr.lastElementChild.appendChild(b); }
     return tr;
   }));
   if (!os.length) $('my-orders').innerHTML = '<tr><td colspan="8" class="muted">none</td></tr>';
@@ -441,7 +468,7 @@ async function loadMine() {
     if (needTaker || needMaker) {
       const cell = tr.lastElementChild; const inp = document.createElement('input'); inp.placeholder = needTaker ? `txid: pay ${fromAtoms(m.taker_amount, m.taker_asset)} to ${short(m.taker_pay_to, 10)}` : `txid: pay ${fromAtoms(m.maker_amount, m.maker_asset)} to ${short(m.maker_pay_to, 10)}`; inp.style.width = '260px'; inp.className = 'mono';
       const b = document.createElement('button'); b.className = 'small'; b.textContent = 'Report';
-      b.onclick = async () => { try { await send(api, secret, TxType.ReportPayment, { match_id: hex.dec(m.id), leg: needTaker ? 0 : 1, txid: inp.value.trim() }); loadPro(); } catch (e) { alert(e.message); } };
+      b.onclick = async () => { try { await send(api, null, TxType.ReportPayment, { match_id: hex.dec(m.id), leg: needTaker ? 0 : 1, txid: inp.value.trim() }); loadPro(); } catch (e) { alert(e.message); } };
       cell.append(inp, ' ', b);
     }
     return tr;

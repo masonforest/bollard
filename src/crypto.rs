@@ -60,3 +60,36 @@ pub fn pubkey_from_hex(h: &str) -> Result<[u8; 33]> {
     let b = hex::decode(h.trim().trim_start_matches("0x"))?;
     Ok(PublicKey::from_slice(&b)?.serialize())
 }
+
+/// Verify a passkey (WebAuthn, P-256) assertion over `digest`, the SHA256 of
+/// the transaction. The authenticator signed SHA256(auth_data || SHA256(client_data));
+/// client_data must carry our digest as its challenge and be a "webauthn.get".
+pub fn verify_webauthn(pubkey: &[u8], digest: &[u8; 32], sig: &[u8], auth_data: &[u8], client_data: &[u8]) -> bool {
+    use base64::Engine;
+    use p256::ecdsa::signature::hazmat::PrehashVerifier;
+    let Ok(vk) = p256::ecdsa::VerifyingKey::from_sec1_bytes(pubkey) else { return false };
+    let Ok(signature) = p256::ecdsa::Signature::from_slice(sig) else { return false };
+    if auth_data.len() < 37 {
+        return false;
+    }
+    let Ok(cd) = serde_json::from_slice::<serde_json::Value>(client_data) else { return false };
+    if cd.get("type").and_then(|t| t.as_str()) != Some("webauthn.get") {
+        return false;
+    }
+    let want = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
+    if cd.get("challenge").and_then(|c| c.as_str()) != Some(want.as_str()) {
+        return false;
+    }
+    let mut msg = auth_data.to_vec();
+    msg.extend_from_slice(&sha256(client_data));
+    vk.verify_prehash(&sha256(&msg), &signature).is_ok()
+}
+
+/// Is this a well-formed account id: a 33-byte secp256k1 key or a 65-byte P-256 key?
+pub fn valid_account(b: &[u8]) -> bool {
+    match b.len() {
+        33 => PublicKey::from_slice(b).is_ok(),
+        65 => p256::ecdsa::VerifyingKey::from_sec1_bytes(b).is_ok(),
+        _ => false,
+    }
+}

@@ -27,6 +27,7 @@ pub const ASSETS: &[AssetInfo] = &[
     AssetInfo { id: "btc:BTC", chain: "btc", symbol: "BTC", decimals: 8, min_quantity: 10_000, contract: None, atom_scale: 1 },
     AssetInfo { id: "eth:ETH", chain: "eth", symbol: "ETH", decimals: 9, min_quantity: 1_000_000, contract: None, atom_scale: 1_000_000_000 },
     AssetInfo { id: "eth:USDC", chain: "eth", symbol: "USDC", decimals: 6, min_quantity: 1_000_000, contract: Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"), atom_scale: 1 },
+    AssetInfo { id: "eth:USDT", chain: "eth", symbol: "USDT", decimals: 6, min_quantity: 1_000_000, contract: Some("0xdac17f958d2ee523a2206206994597c13d831ec7"), atom_scale: 1 },
 ];
 
 pub fn asset(id: &str) -> Option<&'static AssetInfo> {
@@ -59,9 +60,6 @@ pub fn parse_market(m: &str) -> Result<(&'static AssetInfo, &'static AssetInfo)>
     let (b, q) = m.split_once('/').ok_or_else(|| anyhow!("market must be base/quote"))?;
     let base = asset(b).ok_or_else(|| anyhow!("unknown asset {b}"))?;
     let quote = asset(q).ok_or_else(|| anyhow!("unknown asset {q}"))?;
-    if base.id == quote.id {
-        return Err(anyhow!("base and quote must differ"));
-    }
     Ok((base, quote))
 }
 

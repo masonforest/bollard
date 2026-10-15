@@ -133,6 +133,7 @@
         <h2>Place order</h2>
         <form id="order-form" class="form">
           <div class="form-row"><label>Side <select id="o-side"><option value="1">Sell base</option><option value="0">Buy base</option></select></label>
+            <label>Settle <select id="o-settle"><option value="0">on the ledger (instant)</option><option value="1">taker pays on chain (deposit)</option></select></label>
             <label>Fill policy <select id="o-fill"><option value="0">seen</option><option value="1" selected>included</option><option value="2">final</option></select></label></div>
           <div class="form-row"><label>Quantity <span class="muted" id="o-qty-unit"></span> <input id="o-qty" type="text" inputmode="decimal" placeholder="0.0"></label>
             <label>Price <span class="muted" id="o-price-unit"></span> <input id="o-price" type="text" inputmode="decimal" placeholder="0.0"></label></div>
@@ -145,6 +146,17 @@
         </form>
       </div>
     </div>
+
+    <h2>Issue options</h2>
+    <p class="muted small-text">A maker mints options on coins they hold off the ledger, locking BLRD as cover. Holders can exercise them; the cover pays if the maker fails to deliver.</p>
+    <form id="issue-form" class="form">
+      <div class="form-row"><label>Action <select id="i-kind"><option value="mint">Mint</option><option value="burn">Burn</option></select></label>
+        <label>Asset <select id="i-asset"></select></label>
+        <label>Quantity <input id="i-qty" type="text" inputmode="decimal" placeholder="0.0"></label>
+        <label>Cover (BLRD) <input id="i-bond" type="text" inputmode="decimal" placeholder="0"></label>
+        <button class="primary" type="submit">Submit</button></div>
+      <div id="i-error" class="error"></div>
+    </form>
 
     <h2>Your orders</h2>
     <table><thead><tr><th>Order</th><th>Market</th><th>Side</th><th class="num">Left</th><th class="num">Price</th><th class="num">Bond left</th><th>Status</th><th></th></tr></thead><tbody id="my-orders"></tbody></table>
@@ -179,17 +191,16 @@
   <!-- ---------------------------------------------------------- account -->
   <dialog id="account">
     <h2>Your account</h2>
-    <p class="muted small-text">A key kept in this browser. It is a Bollard account, and the same key is a Bitcoin address. Takers never need BLRD; makers do.</p>
-    <div class="kv"><span>Public key</span><code id="a-pub" class="addr"></code></div>
-    <div class="kv"><span>Balance</span><span id="a-balance"></span></div>
-    <div class="form-row">
-      <button id="a-copy" class="small">Copy public key</button>
-      <button id="a-show" class="small">Show secret</button>
-      <button id="a-new" class="small">New key</button>
-      <button id="a-close" class="small">Close</button>
+    <p class="muted small-text">A passkey on this device signs every transaction. The same passkey works in the wallet at <a href="/">app.bollard.exchange</a>.</p>
+    <div id="a-unsigned" class="form-row"><button id="a-create" class="primary small">Create account</button><button id="a-signin" class="small">Sign in with passkey</button></div>
+    <div id="a-signed">
+      <div class="kv"><span>Account id</span><code id="a-pub" class="addr"></code></div>
+      <div class="kv"><span>BLRD</span><span id="a-balance"></span></div>
+      <div id="a-assets"></div>
+      <div class="form-row"><button id="a-copy" class="small">Copy account id</button><button id="a-signout" class="small">Sign out</button></div>
     </div>
-    <div id="a-secret-box" class="hidden"><code id="a-secret" class="addr"></code><p class="muted small-text">Anyone with this secret controls the account. Back it up.</p></div>
-    <label class="box"><span class="box-label">Import a secret (hex)</span><div class="box-row"><input id="a-import" type="text" placeholder="64 hex characters" spellcheck="false"><button id="a-import-btn" class="small">Import</button></div></label>
+    <div id="a-error" class="error"></div>
+    <div class="form-row"><button id="a-close" class="small">Close</button></div>
   </dialog>
 </main>
 <script type="module" src="/dashboard/app.js"></script>

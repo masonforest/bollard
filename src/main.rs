@@ -9,6 +9,7 @@ mod db;
 mod enter;
 mod fb;
 mod fbio;
+mod ledger;
 mod lottery;
 mod node;
 
