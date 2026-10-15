@@ -48,8 +48,8 @@ const send = (api, _unused, type, body) => submit(api, signer(), type, body);
 async function renderAccount() {
   const pk = me();
   $('account-btn').textContent = pk ? short(pk, 12) : '';
-  $('account-btn').classList.toggle('hidden', !pk);
-  $('signed-out').classList.toggle('hidden', !!pk);
+  $('gate').classList.toggle('hidden', !!pk);
+  $('app').classList.toggle('hidden', !pk);
   $('a-pub').textContent = pk || '(not signed in)';
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
@@ -60,9 +60,10 @@ async function renderAccount() {
     $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)} (cover ${fromAtoms(x.cover, 'BLRD')})</span></div>`)].join('') : '';
   } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
-// Signed out: two buttons in the header, as on bitcoin.dance. Create makes and registers a passkey; Sign in asks for an existing one.
-function authError(e) { if (e?.name === 'NotAllowedError') return; $('auth-error').textContent = e.message || String(e); setTimeout(() => ($('auth-error').textContent = ''), 5000); }
-$('a-create').onclick = async () => {
+// Signed out: the page is just two buttons. Create makes and registers a passkey; Sign in asks for an existing one.
+function authError(e) { if (e?.name === 'NotAllowedError') return; $('g-error').textContent = e.message || String(e); }
+$('g-create').onclick = async () => {
+  $('g-error').textContent = '';
   try {
     const k = await createPasskey('Bollard');
     const r = await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) });
@@ -70,7 +71,8 @@ $('a-create').onclick = async () => {
     setKey(k);
   } catch (e) { authError(e); }
 };
-$('a-signin').onclick = async () => {
+$('g-signin').onclick = async () => {
+  $('g-error').textContent = '';
   try {
     const id = await signInPasskey();
     const r = await fetch(`${api}/keys/${encodeURIComponent(id)}`);
@@ -78,7 +80,7 @@ $('a-signin').onclick = async () => {
     setKey({ id, pubkey: (await r.json()).pubkey });
   } catch (e) { authError(e); }
 };
-function ensureKey() { if (!key) throw new Error('Create an account or sign in first (top right).'); return key; }
+function ensureKey() { if (!key) throw new Error('Sign in first.'); return key; }
 $('account-btn').onclick = () => { renderAccount(); $('account').showModal(); };
 $('a-close').onclick = () => $('account').close();
 $('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');

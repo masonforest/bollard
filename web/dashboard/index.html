@@ -16,7 +16,12 @@
 <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 </head>
 <body>
-<main class="wide">
+<section id="gate" class="gate hidden">
+  <button id="g-create" class="primary">Create account</button>
+  <button id="g-signin" class="primary ghost">Sign in</button>
+  <p id="g-error" class="error"></p>
+</section>
+<main id="app" class="wide">
   <header class="bar">
     <div class="brand"><a href="https://bollard.exchange/">Bollard</a> <span class="muted">app</span></div>
     <div class="modes" role="tablist">
@@ -25,9 +30,7 @@
     </div>
     <div class="right">
       <span id="role" class="pill">connecting</span>
-      <span id="signed-out" class="auth"><button id="a-create" class="chip accent">Create account</button><button id="a-signin" class="chip">Sign in</button></span>
-      <button id="account-btn" class="chip hidden" title="Your account">no key</button>
-      <span id="auth-error" class="error"></span>
+      <button id="account-btn" class="chip" title="Your account">no key</button>
     </div>
   </header>
 
