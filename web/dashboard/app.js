@@ -154,7 +154,7 @@ function renderPicker() {
   for (const b of $('p-chains').children) b.classList.toggle('on', b.dataset.chain === pickerChain);
   const q = $('p-search').value.trim().toLowerCase();
   const current = pickerFor ? $(pickerFor).value : '';
-  const list = Object.values(assets).filter((a) => (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
+  const list = Object.values(assets).filter((a) => !(pickerFor === 'm-base-asset' && a.id === 'eth:USDC') && (pickerChain === 'all' || a.chain === pickerChain) && (!q || a.symbol.toLowerCase().includes(q) || (ASSET_NAMES[a.id] || '').toLowerCase().includes(q) || a.id.toLowerCase().includes(q)));
   $('p-popular').replaceChildren(...list.slice(0, 4).map((a) => { const b = document.createElement('button'); b.innerHTML = `${coinIcon(a)}${a.symbol}`; b.onclick = () => choose(a.id); return b; }));
   $('p-list').replaceChildren(...list.map((a) => {
     const b = document.createElement('button'); b.className = 'token-row' + (a.id === current ? ' on' : '');
@@ -163,7 +163,7 @@ function renderPicker() {
   }));
   if (!list.length) $('p-list').innerHTML = '<div class="picker-label">Nothing matches.</div>';
 }
-function currentMarket() { return `${$('m-base-asset').value}/${$('m-quote-asset').value}`; }
+function currentMarket() { return `${$('m-base-asset').value}/eth:USDC`; }
 let quote = null; // { order, qty, payAtoms, getAtoms, payAsset, getAsset, market, side }
 
 async function bestQuote(payAsset, getAsset, payAtoms) {
@@ -386,9 +386,8 @@ function orderRow(o, cls) {
   return tr;
 }
 function marketProblem() {
-  const [b, q] = currentMarket().split('/');
-  if (b === q) return 'base and quote must differ';
-  if (q === 'BLRD') return 'BLRD trades as the base asset (sell BLRD for the other side)';
+  const [b] = currentMarket().split('/');
+  if (b === 'eth:USDC') return 'USDC is the quote for every market; pick what to trade against it';
   return '';
 }
 async function loadBook() {
@@ -411,7 +410,7 @@ function updateRecvHint() {
   const bondRow = $('o-bond').parentElement; bondRow.style.opacity = base === 'BLRD' && $('o-side').value === '1' ? .4 : 1;
 }
 $('o-side').onchange = updateRecvHint;
-$('o-settle').onchange = () => { const dep = $('o-settle').value === '1'; $('o-recv').parentElement.classList.toggle('hidden', !dep); $('o-bond').parentElement.classList.toggle('hidden', dep); $('o-claim-bond').parentElement.classList.toggle('hidden', !dep); if (dep) $('o-side').value = '1'; };
+$('o-settle').onchange = () => { const dep = $('o-settle').value === '1'; $('o-price-unit').textContent = dep ? `(${assets[$('m-base-asset').value]?.symbol} on chain per ${assets[$('m-base-asset').value]?.symbol}, usually 1)` : ''; $('o-recv').parentElement.classList.toggle('hidden', !dep); $('o-bond').parentElement.classList.toggle('hidden', dep); $('o-claim-bond').parentElement.classList.toggle('hidden', !dep); if (dep) $('o-side').value = '1'; };
 $('issue-form').onsubmit = async (ev) => {
   ev.preventDefault(); $('i-error').textContent = '';
   try {
@@ -424,7 +423,10 @@ $('issue-form').onsubmit = async (ev) => {
 $('order-form').onsubmit = async (ev) => {
   ev.preventDefault(); $('o-error').textContent = '';
   try {
-    const market = currentMarket(); const [base, q] = market.split('/');
+    const [base, q0] = currentMarket().split('/');
+    // A deposit sells options for the same coin on chain; a ledger order is quoted in USDC.
+    const deposit = $('o-settle').value === '1';
+    const q = deposit ? base : q0; const market = `${base}/${q}`;
     const body = {
       market, side: Number($('o-side').value),
       quantity: toAtoms($('o-qty').value, base),

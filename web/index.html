@@ -44,7 +44,7 @@ bollard tx mint --asset btc:BTC --quantity 100000000 --bond 1000000000
 # sell them for on-chain bitcoin; every claim gets its own address from the xpub
 bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 \
   --price 100000000 --receive-address xpub... --expiry-height 980000
-# or rest them on the ledger against dollars
+# or rest them on the ledger; every market is quoted in USDC
 bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 \
   --price 9000000000000 --expiry-height 980000</code></pre>
   <p class="muted">Amounts are in atoms: sats, gwei, 10<sup>-6</sup> USDC, rill (10<sup>-8</sup> BLRD). Prices are quote atoms per 100,000,000 base atoms. Holders never need BLRD; people use the <a href="https://app.bollard.exchange/">wallet</a>.</p>

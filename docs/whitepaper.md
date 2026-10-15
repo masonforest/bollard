@@ -148,7 +148,7 @@ There is no price oracle, so the protocol cannot judge whether cover is enough. 
 
 ### Moving
 
-Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders on the book that turn the sent asset into the recipient's currency, fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.
+Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders that turn the sent asset into dollars and then dollars into the recipient's currency (one hop when either side is dollars), fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.
 
 ### Exercising
 
@@ -165,7 +165,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest or
 
 - An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.
 - Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote.
-- A market is any pair of supported assets, priced as quote per base. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.
+- Every ledger market is quoted in dollars: USDC on Ethereum is the quote, and each other asset is a base against it. One market per asset keeps the book deep and the prices plain. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.
 
 ### Resting order (maker)
 

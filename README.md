@@ -4,7 +4,7 @@ A cross-chain order book with real settlement, finalized on Bitcoin.
 
 - What trades are options: a maker's promise to deliver a coin on its chain, backed by BLRD cover the maker locks. Holders send, receive and trade options instantly and for free, and exercise them to take the coin out. Holders never need BLRD.
 - Coins move on chain only for deposits (buy options with the coin) and exercises (the issuer delivers, or loses its cover to the holder). Anyone may deliver in the issuer's place and take the cover.
-- Every account picks a currency. A send to someone who uses another currency converts on the book in the same entry.
+- Every account picks a currency. A send to someone who uses another currency converts on the book in the same entry. Every market is quoted in USDC.
 - Accounts are passkeys (P-256) or secp256k1 keys.
 - One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: a fee-weighted lottery run through OP_RETURN entries, which also commit to the log and finalize it.
 - One binary, one Postgres database, one Bitcoin RPC. Chain adapters for the rest.

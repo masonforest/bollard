@@ -219,9 +219,20 @@ async fn fill_ledger(c: &mut PgConnection, e: &ParsedEntry, o: &crate::db::Order
 }
 
 /// Convert `amount` of `from_asset` held by `payer` into `to_asset`, delivered
-/// to `to`, by taking the best resting ledger orders. Fails unless the whole
-/// amount can be converted.
+/// to `to`, by taking the best resting ledger orders. Every ledger market is
+/// quoted in USDC, so a conversion between two other assets is two hops through
+/// USDC in the same entry. Fails unless the whole amount can be converted.
 async fn swap_ledger(c: &mut PgConnection, e: &ParsedEntry, payer: &[u8], from_asset: &str, to_asset: &str, amount: i64, to: &[u8]) -> Result<i64> {
+    if from_asset == chain::QUOTE || to_asset == chain::QUOTE {
+        return swap_pair(c, e, payer, from_asset, to_asset, amount, to, 1).await;
+    }
+    let usdc = swap_pair(c, e, payer, from_asset, chain::QUOTE, amount, payer, 1).await?;
+    swap_pair(c, e, payer, chain::QUOTE, to_asset, usdc, to, 1000).await
+}
+
+/// One hop: take resting orders on the pair until `amount` of `from_asset` is spent.
+/// `first_nth` keeps match ids unique across the hops of one entry.
+async fn swap_pair(c: &mut PgConnection, e: &ParsedEntry, payer: &[u8], from_asset: &str, to_asset: &str, amount: i64, to: &[u8], first_nth: u32) -> Result<i64> {
     // Asks on to/from: the maker sells what we want for what we have. Bids on
     // from/to: the maker buys what we have with what we want.
     let asks = sqlx::query_as::<_, crate::db::Order>("select * from orders where market = $1 and status = 'open' and side = 1 and settle = 0 and expiry_height > $2 order by price asc, seq asc")
@@ -245,7 +256,7 @@ async fn swap_ledger(c: &mut PgConnection, e: &ParsedEntry, payer: &[u8], from_a
     all.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     let mut left = amount;
     let mut got = 0i64;
-    let mut nth = 1u32;
+    let mut nth = first_nth;
     for (_, o) in all {
         if left <= 0 {
             break;
@@ -442,8 +453,11 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     if quote_amount < quote.min_quantity as i64 {
                         bail!("quote amount below the minimum of {} {}", quote.min_quantity, quote.id);
                     }
-                    if *settle == 0 && base.id == quote.id {
-                        bail!("base and quote must differ on a ledger market");
+                    if *settle == 0 && base.id == chain::QUOTE {
+                        bail!("{} is the quote of every ledger market; the base must be another asset", chain::QUOTE);
+                    }
+                    if *settle == 0 && quote.id != chain::QUOTE {
+                        bail!("ledger markets are quoted in {}: use {}/{}", chain::QUOTE, base.id, chain::QUOTE);
                     }
                     if *settle == 1 {
                         if *side != 1 {

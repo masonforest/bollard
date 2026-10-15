@@ -22,6 +22,9 @@ pub struct AssetInfo {
     pub atom_scale: u128,
 }
 
+/// The one quote asset for ledger markets: dollars, as USDC on Ethereum.
+pub const QUOTE: &str = "eth:USDC";
+
 pub const ASSETS: &[AssetInfo] = &[
     AssetInfo { id: "BLRD", chain: "blrd", symbol: "BLRD", decimals: 8, min_quantity: 1, contract: None, atom_scale: 1 },
     AssetInfo { id: "btc:BTC", chain: "btc", symbol: "BTC", decimals: 8, min_quantity: 10_000, contract: None, atom_scale: 1 },

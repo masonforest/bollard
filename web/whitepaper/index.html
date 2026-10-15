@@ -235,7 +235,7 @@
 </table>
 <p>There is no price oracle, so the protocol cannot judge whether cover is enough. The cover ratio (BLRD locked per unit issued) is public, the interface prices it from the network's own BLRD markets, and holders see it before they accept an issuer's options. An issuer with thin cover finds its options discounted on the book or refused. That is the whole enforcement, and it is the same enforcement a bank faces.</p>
 <h3>Moving</h3>
-<p>Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders on the book that turn the sent asset into the recipient's currency, fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.</p>
+<p>Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders that turn the sent asset into dollars and then dollars into the recipient's currency (one hop when either side is dollars), fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.</p>
 <h3>Exercising</h3>
 <p>Exercise(asset, quantity, receive address) burns options the holder has and opens a delivery match against their issuer, oldest issuer first. The issuer must pay the coin to the holder's address on its chain by the maker deadline. The holder's share of the issuer's cover is the bond on that match, and it follows the bond rules in Settlement below: released to whoever delivers, paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.</p>
 <h2>Order book and matching</h2>
@@ -248,7 +248,7 @@
 <ul>
 <li>An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.</li>
 <li>Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote.</li>
-<li>A market is any pair of supported assets, priced as quote per base. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.</li>
+<li>Every ledger market is quoted in dollars: USDC on Ethereum is the quote, and each other asset is a base against it. One market per asset keeps the book deep and the prices plain. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.</li>
 </ul>
 <h3>Resting order (maker)</h3>
 <table>
