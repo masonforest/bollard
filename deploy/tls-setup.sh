@@ -8,8 +8,8 @@ NAMES=""; for n in "$@"; do NAMES="$NAMES -d $n"; done
 certbot certonly --nginx --non-interactive --agree-tos -m "$EMAIL" --keep-until-expiring --expand $NAMES
 
 tls_block() { # name cert-dir upstream-port-or-webroot
-if [ "$3" = "app" ]; then body="root /var/www/bollard.exchange; location = / { try_files /dashboard/index.html =404; } location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }";
-elif [ "${3#/}" != "$3" ]; then body="root $3; index index.html; location = /dashboard { return 301 https://app.bollard.exchange/; } location = /dashboard/ { return 301 https://app.bollard.exchange/; } location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }"; else body="location / { proxy_pass http://127.0.0.1:$3; }"; fi
+if [ "$3" = "app" ]; then body="return 301 https://bollard.exchange\$request_uri;";
+elif [ "${3#/}" != "$3" ]; then body="root $3; index index.html; location = / { try_files /wallet/index.html =404; } location = /docs { return 301 /docs/; } location /whitepaper { return 301 /docs/whitepaper/; } location / { try_files \$uri \$uri/ @api; } location @api { proxy_pass http://127.0.0.1:8080; }"; else body="location / { proxy_pass http://127.0.0.1:$3; }"; fi
 cat <<TLS
 server {
     listen 443 ssl;
