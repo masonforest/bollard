@@ -32,6 +32,10 @@
   <!-- ---------------------------------------------------------- simple -->
   <section id="simple">
     <div id="s-swap" class="swap hidden">
+      <div id="s-success" class="success hidden" aria-live="polite">
+        <svg viewBox="0 0 120 120" width="120" height="120"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg>
+        <div class="success-text">Swap complete</div>
+      </div>
       <div class="swap-title">Pay the maker</div>
       <p>Send exactly <b id="s-pay-exact"></b> to this address on <b id="s-pay-chain-name"></b>. The maker delivers once your payment is in a block (sooner if they fill on sight).</p>
       <div class="pay-to">
@@ -134,7 +138,7 @@
             <label>Price <span class="muted" id="o-price-unit"></span> <input id="o-price" type="text" inputmode="decimal" placeholder="0.0"></label></div>
           <div class="form-row"><label>Bond (BLRD) <input id="o-bond" type="text" inputmode="decimal" placeholder="1.0"></label>
             <label>Claim bond (BLRD) <input id="o-claim-bond" type="text" inputmode="decimal" placeholder="0"></label></div>
-          <div class="form-row"><label>Receive address <span class="muted" id="o-recv-chain"></span> <input id="o-recv" type="text" placeholder="where the asset you buy arrives" spellcheck="false"></label>
+          <div class="form-row"><label>Receive address <span class="muted" id="o-recv-chain"></span> <input id="o-recv" type="text" placeholder="address, or an xpub for a fresh address per claim" spellcheck="false"></label>
             <label>Expires in blocks <input id="o-expiry" type="text" inputmode="numeric" value="144"></label></div>
           <div class="form-row"><button class="primary" type="submit">Place order</button><span id="o-total" class="muted"></span></div>
           <div id="o-error" class="error"></div>

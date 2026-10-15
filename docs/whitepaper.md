@@ -145,7 +145,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest bo
 | bond | BLRD per unit of base, locked from the maker's account at placement |
 | claim bond | BLRD a claimant must lock to claim; default 0 |
 | fill policy | when the maker delivers: on seeing the taker's payment, on its inclusion (the protocol's own trigger), or on its finality; shown in the book |
-| receive address | the maker's address on the chain of the asset being bought; fresh per order |
+| receive address | where the maker is paid, on the chain of the asset it is buying: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo |
 | expiry | a Bitcoin height; the order cancels itself there |
 
 ### Claim (taker)
@@ -165,6 +165,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest bo
 5. Cancel removes the unclaimed remainder at once. Claimed quantity cannot be cancelled.
 6. Markets with BLRD as the base: the maker's BLRD is escrowed at placement and released to the taker by the ledger when the taker's payment is in a block. No maker action, no separate bond.
 7. Dust: each adapter sets a minimum quantity for its asset.
+8. One payment, one match. A transaction id can satisfy only one leg on the whole ledger, and the per-claim addresses above are what make that safe in practice.
 
 A match does not move coins. It records who owes what to whom and holds the maker's bond; settlement is the next section.
 

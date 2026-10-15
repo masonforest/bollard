@@ -251,7 +251,7 @@
 </tr>
 <tr>
 <td>receive address</td>
-<td>the maker's address on the chain of the asset being bought; fresh per order</td>
+<td>where the maker is paid, on the chain of the asset it is buying: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo</td>
 </tr>
 <tr>
 <td>expiry</td>
@@ -291,6 +291,7 @@
 <li>Cancel removes the unclaimed remainder at once. Claimed quantity cannot be cancelled.</li>
 <li>Markets with BLRD as the base: the maker's BLRD is escrowed at placement and released to the taker by the ledger when the taker's payment is in a block. No maker action, no separate bond.</li>
 <li>Dust: each adapter sets a minimum quantity for its asset.</li>
+<li>One payment, one match. A transaction id can satisfy only one leg on the whole ledger, and the per-claim addresses above are what make that safe in practice.</li>
 </ol>
 <p>A match does not move coins. It records who owes what to whom and holds the maker's bond; settlement is the next section.</p>
 <h2>Settlement and bonds</h2>

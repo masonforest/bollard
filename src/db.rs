@@ -40,6 +40,7 @@ pub struct Order {
     pub recv_addr: String,
     pub expiry_height: i32,
     pub status: String,
+    pub claims: i32,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

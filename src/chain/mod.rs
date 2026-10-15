@@ -119,3 +119,46 @@ impl Chains {
         }
     }
 }
+
+/// Where a payment to a maker should go. A plain address is used as is. An
+/// xpub yields a fresh address per claim: child 0/i of the xpub, P2WPKH on
+/// Bitcoin and a keccak address on Ethereum, so a maker's wallet can tell
+/// payments apart without any memo.
+pub fn receive_address(given: &str, chain: &str, index: u32) -> Result<String> {
+    if !given.starts_with("xpub") {
+        return Ok(given.to_string());
+    }
+    use bitcoin::bip32::{ChildNumber, Xpub};
+    use std::str::FromStr;
+    let xpub = Xpub::from_str(given).map_err(|e| anyhow!("bad xpub: {e}"))?;
+    let path = [ChildNumber::from_normal_idx(0)?, ChildNumber::from_normal_idx(index)?];
+    let child = xpub.derive_pub(&crate::crypto::SECP, &path)?;
+    match chain {
+        "btc" => Ok(bitcoin::Address::p2wpkh(&bitcoin::CompressedPublicKey(child.public_key), bitcoin::Network::Bitcoin).to_string()),
+        "eth" => {
+            use sha3::{Digest, Keccak256};
+            let uncompressed = child.public_key.serialize_uncompressed();
+            let hash = Keccak256::digest(&uncompressed[1..]);
+            Ok(format!("0x{}", hex::encode(&hash[12..])))
+        }
+        other => Err(anyhow!("no address derivation for chain {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // BIP32 test vector 1 master key.
+    const XPUB: &str = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+
+    #[test]
+    fn derives_distinct_addresses_per_claim() {
+        let a0 = receive_address(XPUB, "btc", 0).unwrap();
+        let a1 = receive_address(XPUB, "btc", 1).unwrap();
+        assert!(a0.starts_with("bc1q") && a1.starts_with("bc1q") && a0 != a1);
+        let e0 = receive_address(XPUB, "eth", 0).unwrap();
+        let e1 = receive_address(XPUB, "eth", 1).unwrap();
+        assert!(e0.starts_with("0x") && e0.len() == 42 && e0 != e1);
+        assert_eq!(receive_address("bc1qplain", "btc", 7).unwrap(), "bc1qplain");
+    }
+}

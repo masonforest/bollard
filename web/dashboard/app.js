@@ -294,12 +294,23 @@ function matchStatusText(m, role) {
   if (!m.maker_included_height) return 'Maker payment reported; waiting for it to land in a block.';
   return 'Maker payment in a block; bond releases when it is deep.';
 }
+let celebrating = false;
+function celebrate() {
+  if (celebrating) return; celebrating = true;
+  $('s-success').classList.remove('hidden');
+  setTimeout(() => {
+    $('s-success').classList.add('hidden'); celebrating = false;
+    swap = null; try { localStorage.removeItem(SWAP); } catch {}
+    showSwap(); $('s-go').disabled = false; $('s-pay-amount').value = ''; $('s-get-amount').value = ''; scheduleQuote(); loadHistory(); renderAccount();
+  }, 2800);
+}
 async function trackSwap() {
   if (!swap) return;
   const ms = await j(`/matches?account=${me()}&limit=20`).catch(() => []);
   const m = ms.find((x) => x.id === swap.match);
   if (!m) { $('s-status').textContent = 'Match not found on this node yet.'; return; }
   $('s-status').textContent = matchStatusText(m, 'taker');
+  if (m.status === 'closed') celebrate();
 }
 async function loadHistory() {
   const pk = me(); if (!pk) { $('s-history').innerHTML = '<tr><td colspan="6" class="muted">no key yet</td></tr>'; return; }

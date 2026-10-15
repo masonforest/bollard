@@ -205,6 +205,11 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     if receive_address.is_empty() {
                         bail!("receive_address is required");
                     }
+                    // The maker is paid in the asset it buys: quote when selling base, base when buying.
+                    let buys = if *side == 1 { quote } else { base };
+                    if buys.chain != "blrd" {
+                        chain::receive_address(receive_address, buys.chain, 0)?;
+                    }
                     let locked = if base.id == "BLRD" { *quantity } else { *bond };
                     if locked == 0 {
                         bail!("bond must be positive");
@@ -283,6 +288,9 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     let left_qty = o.qty_left - qty;
                     let left_bond = if base.id == "BLRD" { left_qty } else { o.bond_left - bond };
                     let status = if left_qty == 0 { "filled" } else { "open" };
+                    // A fresh address for this claim when the maker gave an xpub.
+                    let taker_pay_to = if taker_asset.chain == "blrd" { o.recv_addr.clone() } else { chain::receive_address(&o.recv_addr, taker_asset.chain, o.claims as u32)? };
+                    sqlx::query("update orders set claims = claims + 1 where id = $1").bind(&o.id).execute(&mut *c).await?;
                     sqlx::query("update orders set qty_left = $2, bond_left = $3, status = $4 where id = $1")
                         .bind(&o.id)
                         .bind(left_qty)
@@ -306,7 +314,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         .bind(taker_asset.chain)
                         .bind(taker_asset.id)
                         .bind(i(taker_amount)?)
-                        .bind(&o.recv_addr)
+                        .bind(&taker_pay_to)
                         .bind(maker_asset.chain)
                         .bind(maker_asset.id)
                         .bind(i(maker_amount)?)
@@ -325,6 +333,10 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     }
                     if txid.is_empty() || txid.len() > 128 {
                         bail!("bad txid");
+                    }
+                    let used: i64 = sqlx::query_scalar("select count(*) from matches where (taker_txid = $1 or maker_txid = $1) and id <> $2").bind(txid).bind(&m.id).fetch_one(&mut *c).await?;
+                    if used > 0 {
+                        bail!("that transaction already pays another match");
                     }
                     match leg {
                         0 => {

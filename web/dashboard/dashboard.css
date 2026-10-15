@@ -100,3 +100,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .small.ok { border-color: #1a7f37; color: #1a7f37; }
 .manual { margin-top: 10px; }
 .manual summary { cursor: pointer; }
+
+/* success */
+#s-swap { position: relative; }
+.success { position: absolute; inset: 0; border-radius: 18px; background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 2; }
+.success .ring { fill: #1a7f37; stroke: none; transform-origin: 60px 60px; animation: pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
+.success .tick { fill: none; stroke: #fff; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 90; stroke-dashoffset: 90; animation: draw .5s .35s ease-out forwards; }
+.success-text { font-size: 18px; font-weight: 600; animation: fade .4s .7s both; }
+@keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
