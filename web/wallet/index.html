@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Bollard">
 <title>Bollard</title>
 <meta name="description" content="Send, receive and swap across chains. Instant, free, backed by bonded makers and finalized on Bitcoin.">
 <script type="importmap">
@@ -48,11 +53,24 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .qr svg { display: block; width: 180px; border-radius: 8px; background: #fff; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 2px; padding: 0 16px; padding-top: env(safe-area-inset-top); overflow-x: auto; scrollbar-width: none; }
-nav::-webkit-scrollbar { display: none; }
+nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 2px; padding: 0 16px; padding-top: env(safe-area-inset-top); }
 nav .brand { font-weight: 600; margin-right: 12px; white-space: nowrap; }
-nav button { border: 0; border-radius: 0; padding: 14px 10px; color: var(--muted); font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-nav button.active { color: var(--fg); border-bottom-color: var(--accent); }
+nav .items { display: flex; gap: 2px; }
+nav .items button { border: 0; border-radius: 0; padding: 14px 10px; color: var(--muted); font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+nav .items button.active { color: var(--fg); border-bottom-color: var(--accent); }
+nav .menu-btn { display: none; margin-left: auto; border: 0; padding: 12px 4px 12px 12px; color: var(--fg); font-size: 22px; line-height: 1; }
+@media (max-width: 560px) {
+  nav { position: sticky; }
+  nav .menu-btn { display: block; }
+  nav .items { display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; gap: 0; background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  nav .items.open { display: flex; }
+  nav .items button { text-align: left; padding: 14px 20px; font-size: 16px; border-bottom: 0; border-left: 3px solid transparent; margin: 0; }
+  nav .items button.active { border-left-color: var(--accent); }
+  main { padding: 28px 20px calc(40px + env(safe-area-inset-bottom)); gap: 24px; }
+  h1 { font-size: 44px; }
+}
+button, input, select { touch-action: manipulation; }
+input.mono { font-size: 16px; }
 .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 .gate { min-height: calc(100dvh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .gate button { width: min(300px, 100%); text-align: center; }
@@ -139,7 +157,8 @@ const actions = {
     await refresh();
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
-  tab: (el) => { state.view = el.dataset.value; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
+  menu: () => { state.menu = !state.menu; render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; if (state.view === 'activity') loadActivity(); if (state.view === 'deposit') loadDeposit(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
   depositAsset: (el) => { state.deposit = { asset: el.dataset.value }; loadDeposit(); render(); },
@@ -217,7 +236,7 @@ function render() {
   }
   const v = views[state.view] || views.home;
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
-  nav.innerHTML = `<span class="brand">Bollard</span>` + ['home', 'send', 'receive', 'deposit', 'withdraw', 'activity', 'settings'].map((t) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('');
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + ['home', 'send', 'receive', 'deposit', 'withdraw', 'activity', 'settings'].map((t) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 const views = {
   home: () => {
@@ -227,7 +246,6 @@ const views = {
       ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
       <div class="stack center">
         <h1>${money(balanceOf(c), c)}</h1>
-        <p class="muted">${NAMES[c] || c} · ${CHAIN[assets[c]?.chain] || ''}</p>
       </div>
       <div class="row fill"><button class="primary" data-action="tab" data-value="send">Send</button><button data-action="tab" data-value="receive">Receive</button></div>
       ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
