@@ -54,11 +54,10 @@ async function renderAccount() {
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
     const bal = a ? fromAtoms(a.balance, 'BLRD') : '?';
-    $('a-balance').textContent = a ? `${bal} (${fromAtoms(a.staked, 'BLRD')} staked${a.unstaking > 0 ? `, ${fromAtoms(a.unstaking, 'BLRD')} unstaking at ${a.unstake_height}` : ''}, nonce ${a.nonce})` : '?';
-    $('st-info').textContent = a ? `staked ${fromAtoms(a.staked, 'BLRD')} BLRD` : '';
+    $('a-balance').textContent = a ? `${bal} (nonce ${a.nonce})` : '?';
     $('my-blrd').textContent = bal;
     const b = await j(`/balances/${pk}`).catch(() => null);
-    $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)}</span></div>`)].join('') : '';
+    $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`)].join('') : '';
   } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
 // Signed out: the page is just two buttons. Create makes and registers a passkey; Sign in asks for an existing one.
@@ -116,7 +115,6 @@ async function loadStatus() {
 async function loadMarkets() {
   marketsInfo = await j('/markets');
   for (const a of marketsInfo.assets) assets[a.id] = a;
-  $('i-asset').innerHTML = marketsInfo.assets.filter((a) => a.chain !== 'blrd').map((a) => `<option value="${a.id}">${a.symbol} (${a.chain})</option>`).join('');
   renderTokenButtons();
   buildPicker();
 }
@@ -392,6 +390,7 @@ async function loadChart() {
 function orderRow(o, cls) {
   const tr = document.createElement('tr');
   const [base, q] = o.market.split('/');
+  tr.style.cursor = 'pointer'; tr.title = 'take this order'; tr.onclick = () => pickOrder(o);
   tr.innerHTML = `<td class="mono ${cls}">${short(o.id)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${o.settle === 0 ? 'escrowed' : fromAtoms(o.bond_left, 'BLRD') + ' BLRD'}</td><td>${policy[o.fill_policy]}</td>`;
   return tr;
 }
@@ -405,94 +404,58 @@ async function loadBook() {
   const problem = marketProblem(); if (problem) { $('market-note').textContent = problem; $('bids').innerHTML = $('asks').innerHTML = ''; return; }
   const [base, q] = market.split('/');
   $('market-note').textContent = `price in ${assets[q]?.symbol} per ${assets[base]?.symbol}`;
-  $('o-qty-unit').textContent = assets[base]?.symbol || ''; $('o-price-unit').textContent = `${assets[q]?.symbol}/${assets[base]?.symbol}`;
-  updateRecvHint();
   const b = await j('/book?market=' + encodeURIComponent(market));
   if (b.error) { $('market-note').textContent = b.error; return; }
   $('bids').replaceChildren(...b.bids.map((o) => orderRow(o, 'bid')));
   $('asks').replaceChildren(...b.asks.map((o) => orderRow(o, 'ask')));
   if (!b.bids.length && !b.asks.length) { const tr = document.createElement('tr'); tr.innerHTML = '<td colspan="5" class="muted">no resting orders</td>'; $('bids').appendChild(tr); }
 }
-function updateRecvHint() {
-  const [base, q] = (currentMarket() || '/').split('/');
-  const buying = $('o-side').value === '1' ? q : base; // sell base -> you receive quote
-  $('o-recv-chain').textContent = buying ? `(${assets[buying]?.symbol} on ${assets[buying]?.chain})` : '';
-  const bondRow = $('o-bond').parentElement; bondRow.style.opacity = base === 'BLRD' && $('o-side').value === '1' ? .4 : 1;
+// ---- taking: click a book row, enter a quantity, claim it
+let picked = null;
+function pickOrder(o) {
+  picked = o; const [base, q] = o.market.split('/');
+  $('t-desc').textContent = `${o.side ? 'buy' : 'sell'} ${assets[base]?.symbol} at ${fmt(priceToHuman(o.price, base, q))} ${assets[q]?.symbol}/${assets[base]?.symbol} (${fromAtoms(o.qty_left, base)} left${o.settle === 1 ? ', paid on chain' : ''})`;
+  $('t-unit').textContent = assets[base]?.symbol || ''; $('t-qty').value = fromAtoms(o.qty_left, base, false); $('t-result').textContent = ''; $('t-error').textContent = '';
+  $('t-qty').dispatchEvent(new Event('input')); $('t-qty').focus();
 }
-$('o-side').onchange = updateRecvHint;
-$('o-settle').onchange = () => { const dep = $('o-settle').value === '1'; $('o-price-unit').textContent = dep ? `(${assets[$('m-base-asset').value]?.symbol} on chain per ${assets[$('m-base-asset').value]?.symbol}, usually 1)` : ''; $('o-recv').parentElement.classList.toggle('hidden', !dep); $('o-bond').parentElement.classList.toggle('hidden', dep); $('o-claim-bond').parentElement.classList.toggle('hidden', !dep); if (dep) $('o-side').value = '1'; };
-$('stake-form').onsubmit = async (ev) => {
-  ev.preventDefault(); $('st-error').textContent = '';
-  try {
-    const amount = toAtoms($('st-amount').value, 'BLRD');
-    await send(api, ensureKey(), $('st-kind').value === 'stake' ? TxType.Stake : TxType.Unstake, { amount });
-    $('st-amount').value = ''; renderAccount(); loadPro();
-  } catch (e) { $('st-error').textContent = e.message; }
-};
-$('issue-form').onsubmit = async (ev) => {
-  ev.preventDefault(); $('i-error').textContent = '';
-  try {
-    const asset = $('i-asset').value; const quantity = toAtoms($('i-qty').value, asset);
-    if ($('i-kind').value === 'mint') await send(api, ensureKey(), TxType.Mint, { asset, quantity });
-    else await send(api, ensureKey(), TxType.Burn, { asset, quantity });
-    $('i-qty').value = ''; renderAccount(); loadPro();
-  } catch (e) { $('i-error').textContent = e.message; }
-};
-$('order-form').onsubmit = async (ev) => {
-  ev.preventDefault(); $('o-error').textContent = '';
-  try {
-    const [base, q0] = currentMarket().split('/');
-    // A deposit sells options for the same coin on chain; a ledger order is quoted in USDC.
-    const deposit = $('o-settle').value === '1';
-    const q = deposit ? base : q0; const market = `${base}/${q}`;
-    const body = {
-      market, side: Number($('o-side').value),
-      quantity: toAtoms($('o-qty').value, base),
-      price: priceFromHuman($('o-price').value, base, q),
-      bond: toAtoms($('o-bond').value || '0', 'BLRD'),
-      claim_bond: toAtoms($('o-claim-bond').value || '0', 'BLRD'),
-      fill_policy: Number($('o-fill').value),
-      receive_address: $('o-recv').value.trim(),
-      expiry_height: (status?.bitcoin?.height || 0) + Number($('o-expiry').value || 144),
-      settle: Number($('o-settle').value),
-    };
-    const out = await send(api, ensureKey(), TxType.PlaceOrder, body);
-    $('o-total').textContent = `placed ${short(out.hash)}`;
-    $('o-qty').value = ''; $('o-price').value = '';
-    loadPro();
-  } catch (e) { $('o-error').textContent = e.message; }
-};
-for (const id of ['o-qty', 'o-price']) $(id).addEventListener('input', () => {
-  try { const [base, q] = currentMarket().split('/'); const qa = quoteAmount(toAtoms($('o-qty').value, base), priceFromHuman($('o-price').value, base, q)); $('o-total').textContent = `= ${fromAtoms(qa, q)}`; } catch { $('o-total').textContent = ''; }
+$('t-qty').addEventListener('input', () => {
+  try { if (!picked) throw 0; const [base, q] = picked.market.split('/'); const qa = quoteAmount(toAtoms($('t-qty').value, base), picked.price); $('t-total').textContent = `${picked.side ? 'you pay' : 'you get'} ${fromAtoms(qa, q)}`; } catch { $('t-total').textContent = ''; }
 });
+$('take-form').onsubmit = async (ev) => {
+  ev.preventDefault(); $('t-error').textContent = ''; $('t-result').textContent = '';
+  try {
+    if (!picked) throw new Error('Pick an order in the book first.');
+    const [base] = picked.market.split('/');
+    const quantity = toAtoms($('t-qty').value, base);
+    const out = await send(api, ensureKey(), TxType.Claim, { order_id: hex.dec(picked.id), quantity, receive_address: '' });
+    if (picked.settle === 1) {
+      const ms = await j(`/matches?account=${me()}&kind=deposit&limit=5`); const m = ms.find((x) => x.id === out.hash);
+      $('t-result').innerHTML = m ? `Pay <b>${fromAtoms(m.taker_amount, m.taker_asset)}</b> to <code class="addr">${m.taker_pay_to}</code>. The options are yours once it is in a block; the wallet watches for it.` : `claimed ${short(out.hash)}`;
+    } else {
+      $('t-result').textContent = `Done: ${fromAtoms(quantity, base)} settled on the ledger (${short(out.hash)}).`;
+    }
+    picked = null; $('t-desc').textContent = 'none picked'; $('t-qty').value = ''; $('t-total').textContent = '';
+    loadPro();
+  } catch (e) { $('t-error').textContent = e.message; }
+};
 
 function legText(txid, included) { return txid ? `<span class="mono">${short(txid, 12)}</span> ${included ? 'in block' : 'reported'}` : '<span class="muted">waiting</span>'; }
 async function loadMine() {
   const pk = me();
-  if (!pk) { $('my-orders').innerHTML = $('my-matches').innerHTML = '<tr><td colspan="8" class="muted">no key yet</td></tr>'; return; }
-  const os = await j(`/orders?account=${pk}&limit=50`).catch(() => []);
-  $('my-orders').replaceChildren(...os.map((o) => {
-    const tr = document.createElement('tr'); const [base, q] = o.market.split('/');
-    tr.innerHTML = `<td class="mono">${short(o.id)}</td><td>${o.market}</td><td>${o.side ? 'sell' : 'buy'}</td><td class="num">${fromAtoms(o.qty_left, base)}</td><td class="num">${fmt(priceToHuman(o.price, base, q))}</td><td class="num">${fromAtoms(o.bond_left, 'BLRD')}</td><td>${o.status}</td><td></td>`;
-    if (o.status === 'open') { const b = document.createElement('button'); b.className = 'small'; b.textContent = 'Cancel'; b.onclick = async () => { try { await send(api, null, TxType.CancelOrder, { order_id: hex.dec(o.id) }); loadPro(); } catch (e) { alert(e.message); } }; tr.lastElementChild.appendChild(b); }
-    return tr;
-  }));
-  if (!os.length) $('my-orders').innerHTML = '<tr><td colspan="8" class="muted">none</td></tr>';
-  const ms = await j(`/matches?account=${pk}&limit=50`).catch(() => []);
+  if (!pk) { $('my-matches').innerHTML = '<tr><td colspan="7" class="muted">no key yet</td></tr>'; return; }
+  const ms = (await j(`/matches?account=${pk}&limit=50`).catch(() => [])).filter((m) => m.taker === pk);
   $('my-matches').replaceChildren(...ms.map((m) => {
-    const tr = document.createElement('tr'); const role = m.taker === pk ? 'taker' : 'maker'; const base = m.market.split('/')[0];
-    tr.innerHTML = `<td class="mono">${short(m.id)}</td><td>${m.market}</td><td>${role}</td><td class="num">${fromAtoms(m.quantity, base)}</td><td>${legText(m.taker_txid, m.taker_included_height)}</td><td>${m.maker_chain === 'blrd' ? 'ledger' : legText(m.maker_txid, m.maker_included_height)}</td><td title="${matchStatusText(m, role)}">${m.status}</td><td></td>`;
-    const needTaker = role === 'taker' && m.status === 'open' && !m.taker_txid;
-    const needMaker = role === 'maker' && m.status === 'open' && m.taker_txid && !m.maker_txid && m.maker_chain !== 'blrd';
-    if (needTaker || needMaker) {
-      const cell = tr.lastElementChild; const inp = document.createElement('input'); inp.placeholder = needTaker ? `txid: pay ${fromAtoms(m.taker_amount, m.taker_asset)} to ${short(m.taker_pay_to, 10)}` : `txid: pay ${fromAtoms(m.maker_amount, m.maker_asset)} to ${short(m.maker_pay_to, 10)}`; inp.style.width = '260px'; inp.className = 'mono';
+    const tr = document.createElement('tr'); const base = m.market.split('/')[0];
+    tr.innerHTML = `<td class="mono">${short(m.id)}</td><td>${m.market}</td><td class="num">${fromAtoms(m.quantity, base)}</td><td>${m.taker_chain === 'ledger' ? 'ledger' : legText(m.taker_txid, m.taker_included_height)}</td><td>${m.maker_chain === 'ledger' || m.maker_chain === 'blrd' ? 'ledger' : legText(m.maker_txid, m.maker_included_height)}</td><td>${m.status}</td><td></td>`;
+    if (m.status === 'open' && !m.taker_txid && m.taker_chain !== 'ledger') {
+      const cell = tr.lastElementChild; const inp = document.createElement('input'); inp.placeholder = `txid: pay ${fromAtoms(m.taker_amount, m.taker_asset)} to ${short(m.taker_pay_to, 10)}`; inp.style.width = '22em';
       const b = document.createElement('button'); b.className = 'small'; b.textContent = 'Report';
-      b.onclick = async () => { try { await send(api, null, TxType.ReportPayment, { match_id: hex.dec(m.id), leg: needTaker ? 0 : 1, txid: inp.value.trim() }); loadPro(); } catch (e) { alert(e.message); } };
+      b.onclick = async () => { try { await send(api, null, TxType.ReportPayment, { match_id: hex.dec(m.id), leg: 0, txid: inp.value.trim() }); loadPro(); } catch (e) { $('t-error').textContent = e.message; } };
       cell.append(inp, ' ', b);
     }
     return tr;
   }));
-  if (!ms.length) $('my-matches').innerHTML = '<tr><td colspan="8" class="muted">none</td></tr>';
+  if (!ms.length) $('my-matches').innerHTML = '<tr><td colspan="7" class="muted">none</td></tr>';
 }
 async function loadMatches() {
   const ms = await j('/matches?status=open&limit=50');

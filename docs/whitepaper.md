@@ -23,6 +23,8 @@ There are five kinds of participant. Only the leader has any power, and only for
 | Bitcoin miner | Mines blocks as usual; may include its own lottery entry and pay the entry fee to itself | Leadership of the block it mines, at no cost |
 | External chains | The chains the supported assets live on carry the actual payments; the network only watches them | Ordinary transaction fees |
 
+Two interfaces are meant for people: a wallet for holders and takers, and a command line for makers. A maker has to deliver on exercises and keep orders fresh while nobody is looking at a browser, so making is a program's job, never a web page's.
+
 Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, balances, issuers, orders, matches), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.
 
 Bitcoin picks the leader and finalizes its log, coins move on the external chains only when options are bought with them or exercised, and the nodes sequence and watch without ever holding coins.

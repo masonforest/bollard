@@ -65,6 +65,7 @@
 </tr>
 </tbody>
 </table>
+<p>Two interfaces are meant for people: a wallet for holders and takers, and a command line for makers. A maker has to deliver on exercises and keep orders fresh while nobody is looking at a browser, so making is a program's job, never a web page's.</p>
 <p>Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, balances, issuers, orders, matches), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.</p>
 <p>Bitcoin picks the leader and finalizes its log, coins move on the external chains only when options are bought with them or exercised, and the nodes sequence and watch without ever holding coins.</p>
 <h2>The Bitcoin lottery</h2>
