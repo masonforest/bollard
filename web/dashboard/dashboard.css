@@ -8,6 +8,9 @@ main.wide { max-width: 1080px; padding-top: 20px; }
 .right { display: flex; gap: 10px; align-items: center; }
 .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
 .pill.leader { color: #1a7f37; border-color: #1a7f37; }
+.auth { display: inline-flex; gap: 6px; }
+.auth .chip { font-family: inherit; }
+.chip.accent { background: var(--accent); color: var(--on-accent, #fff); border-color: var(--accent); font-family: inherit; }
 .chip { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }

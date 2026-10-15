@@ -45,10 +45,11 @@ const me = () => key?.pubkey || null;
 function setKey(k) { key = k; try { if (k) localStorage.setItem(KEY, JSON.stringify(k)); else localStorage.removeItem(KEY); } catch {} renderAccount(); }
 const signer = () => { if (!key) throw new Error('Sign in first (top right).'); return signers.passkey(key); };
 const send = (api, _unused, type, body) => submit(api, signer(), type, body);
-function ensureKey() { if (!key) { signIn(); throw new Error('Sign in with your passkey, then try again.'); } return key; }
 async function renderAccount() {
   const pk = me();
-  $('account-btn').textContent = pk ? short(pk, 12) : 'Sign in';
+  $('account-btn').textContent = pk ? short(pk, 12) : '';
+  $('account-btn').classList.toggle('hidden', !pk);
+  $('signed-out').classList.toggle('hidden', !!pk);
   $('a-pub').textContent = pk || '(not signed in)';
   if (pk) {
     const a = await j(`/account/${pk}`).catch(() => null);
@@ -59,20 +60,26 @@ async function renderAccount() {
     $('a-assets').innerHTML = b ? [...(b.assets || []).filter((x) => x.amount > 0).map((x) => `<div class="kv"><span>${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.amount, x.asset)}</span></div>`), ...(b.issuing || []).map((x) => `<div class="kv"><span>issued ${assets[x.asset]?.symbol || x.asset}</span><span>${fromAtoms(x.issued, x.asset)} (cover ${fromAtoms(x.cover, 'BLRD')})</span></div>`)].join('') : '';
   } else { $('a-balance').textContent = '–'; $('my-blrd').textContent = '–'; $('a-assets').innerHTML = ''; }
 }
-// One click: the passkey prompt. An existing passkey signs in; otherwise a new one is created and registered.
-async function signIn() {
+// Signed out: two buttons in the header, as on bitcoin.dance. Create makes and registers a passkey; Sign in asks for an existing one.
+function authError(e) { if (e?.name === 'NotAllowedError') return; $('auth-error').textContent = e.message || String(e); setTimeout(() => ($('auth-error').textContent = ''), 5000); }
+$('a-create').onclick = async () => {
+  try {
+    const k = await createPasskey('Bollard');
+    const r = await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not register the passkey');
+    setKey(k);
+  } catch (e) { authError(e); }
+};
+$('a-signin').onclick = async () => {
   try {
     const id = await signInPasskey();
     const r = await fetch(`${api}/keys/${encodeURIComponent(id)}`);
-    if (r.ok) { setKey({ id, pubkey: (await r.json()).pubkey }); return; }
-  } catch (e) { if (e.name !== 'NotAllowedError') { alert(e.message); return; } }
-  try {
-    const k = await createPasskey('Bollard');
-    await fetch(api + '/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cred_id: k.id, pubkey: k.pubkey }) });
-    setKey(k);
-  } catch (e) { if (e.name !== 'NotAllowedError') alert(e.message); }
-}
-$('account-btn').onclick = () => { if (!key) { signIn(); return; } renderAccount(); $('account').showModal(); };
+    if (!r.ok) throw new Error('That passkey is not registered here. Create an account instead.');
+    setKey({ id, pubkey: (await r.json()).pubkey });
+  } catch (e) { authError(e); }
+};
+function ensureKey() { if (!key) throw new Error('Create an account or sign in first (top right).'); return key; }
+$('account-btn').onclick = () => { renderAccount(); $('account').showModal(); };
 $('a-close').onclick = () => $('account').close();
 $('a-copy').onclick = () => navigator.clipboard.writeText(me() || '');
 $('a-signout').onclick = () => { setKey(null); $('account').close(); };
