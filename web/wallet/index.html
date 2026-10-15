@@ -53,6 +53,8 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .qr svg { display: block; width: 180px; border-radius: 8px; background: #fff; }
 .qr.big svg { width: min(320px, 100%); }
 .ok { color: var(--ok); }
+main.full { max-width: none; padding: 0; }
+iframe.trade { display: block; width: 100%; height: calc(100dvh - 52px - env(safe-area-inset-top)); border: 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 2px; padding: 0 16px; padding-top: env(safe-area-inset-top); }
@@ -182,12 +184,12 @@ const actions = {
 const forms = {
   // Magic link, as on bitcoin.dance: fund a throwaway key and share a link that carries it. Whoever opens the link accepts the money.
   magic: (form) => run(async () => {
-    const asset = currency();
+    const asset = sendFrom().asset;
     const amount = toAtoms(form.amount.value, asset);
     if (amount <= 0n) throw new Error('Enter an amount.');
     const secret = randomSecret();
     await tx(TxType.Send, { to: pubkeyOf(secret), asset, amount });
-    state.magic = { link: `${location.origin}/#magic/${secret}`, amount: money(amount, asset), qr: false };
+    state.magic = { link: `${location.origin}/#magic/${secret}`, amount: money(amount, asset), qr: false }; state.view = 'home';
     await refresh();
   }),
   withdraw: (form) => run(async () => {
@@ -235,6 +237,23 @@ async function loadActivity() { if (me()) { state.activity = await j(`/activity/
 // ----- views -----
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const qrSvg = (text) => { try { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 2 }); } catch { return ''; } };
+// Everything the account holds, the chosen currency first, BLRD last.
+function holdings() {
+  const c = currency();
+  const rows = (state.info?.assets || []).filter((a) => a.amount > 0).map((a) => ({ asset: a.asset, amount: BigInt(a.amount) }));
+  if (BigInt(state.info?.blrd || 0) > 0n) rows.push({ asset: 'BLRD', amount: BigInt(state.info.blrd) });
+  return rows.sort((x, y) => (x.asset === c ? -1 : y.asset === c ? 1 : 0));
+}
+// What a magic link is funded from: the chosen currency, or, when that is empty, the network and token the user picked.
+function sendFrom() {
+  const c = currency();
+  if (balanceOf(c) > 0n) return { chain: assets[c]?.chain, asset: c };
+  const held = holdings(); if (!held.length) return { chain: assets[c]?.chain, asset: c };
+  const chain = state.from?.chain && held.some((h) => assets[h.asset]?.chain === state.from.chain) ? state.from.chain : assets[held[0].asset]?.chain;
+  const onChain = held.filter((h) => assets[h.asset]?.chain === chain);
+  const asset = state.from?.asset && onChain.some((h) => h.asset === state.from.asset) ? state.from.asset : onChain[0].asset;
+  return { chain, asset };
+}
 const balanceOf = (id) => (id === 'BLRD' ? BigInt(state.info?.blrd || 0) : BigInt(state.info?.assets?.find((a) => a.asset === id)?.amount || 0));
 
 function render() {
@@ -250,8 +269,9 @@ function render() {
     return;
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
+  main.classList.toggle('full', state.view === 'trade' && !state.accept);
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '');
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['magic', 'Send'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -267,34 +287,37 @@ function acceptView() {
 }
 const views = {
   home: () => {
-    const c = currency(); const others = (state.info?.assets || []).filter((a) => a.asset !== c && a.amount > 0);
-    const blrd = BigInt(state.info?.blrd || 0);
+    const c = currency(); const m = state.magic;
+    const held = holdings();
+    const empty = balanceOf(c) === 0n && held.length > 0;
+    const from = sendFrom();
+    const chains = [...new Set(held.map((h) => assets[h.asset]?.chain))];
+    const tokens = held.filter((h) => assets[h.asset]?.chain === from.chain);
+    const others = held.filter((h) => h.asset !== c);
     return `
       ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
       <div class="stack center">
         <h1>${money(balanceOf(c), c)}</h1>
       </div>
-      <div class="row fill"><button class="primary" data-action="tab" data-value="magic">Send</button></div>
-      ${others.length || blrd > 0n ? `<ul class="assets">${others.map((a) => `<li><span>${NAMES[a.asset] || a.asset}</span><span>${money(a.amount, a.asset)}</span></li>`).join('')}${blrd > 0n && c !== 'BLRD' ? `<li><span>Bollard</span><span>${money(blrd, 'BLRD')}</span></li>` : ''}</ul>` : ''}
-`;
+      <form data-form="magic" class="stack">
+        ${empty ? `
+        <div class="row fill">
+          <div class="field" style="flex:1"><span class="label">Network</span><select name="chain" data-change="fromChain">${chains.map((ch) => `<option value="${ch}" ${ch === from.chain ? 'selected' : ''}>${CHAIN[ch] || ch}</option>`).join('')}</select></div>
+          <div class="field" style="flex:1"><span class="label">Token</span><select name="asset" data-change="fromAsset">${tokens.map((h) => `<option value="${h.asset}" ${h.asset === from.asset ? 'selected' : ''}>${assets[h.asset]?.symbol || h.asset} · ${money(h.amount, h.asset)}</option>`).join('')}</select></div>
+        </div>` : ''}
+        <div class="field"><span class="label">Amount${empty ? ` (${assets[from.asset]?.symbol || ''})` : ''}</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
+        <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Create Magic Payment Link</button>
+      </form>
+      ${m ? `
+      <div class="stack">
+        <input class="mono" value="${esc(m.link)}" readonly onclick="this.select()">
+        <div class="row fill"><button data-action="copy" data-text="${esc(m.link)}" data-label="Copy to Clipboard">Copy to Clipboard</button><button data-action="magicQr">${m.qr ? 'Hide QR Code' : 'Show QR Code'}</button></div>
+        ${m.qr ? `<div class="stack center"><p class="muted">Sending ${esc(m.amount)}…</p><div class="qr big">${qrSvg(m.link)}</div></div>` : ''}
+        <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it to them however you like.</p>
+      </div>` : ''}
+      ${others.length ? `<ul class="assets">${others.map((h) => `<li><span>${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
   },
-  magic: () => {
-    const m = state.magic;
-    return `
-    <p class="mono muted center">${me()}</p>
-    <h2>Balance: ${money(balanceOf(currency()), currency())}</h2>
-    <form data-form="magic" class="stack">
-      <div class="field"><span class="label">Amount</span><input name="amount" inputmode="decimal" autocomplete="off" required></div>
-      <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Create Magic Payment Link</button>
-    </form>
-    ${m ? `
-    <div class="stack">
-      <input class="mono" value="${esc(m.link)}" readonly onclick="this.select()">
-      <div class="row fill"><button data-action="copy" data-text="${esc(m.link)}" data-label="Copy to Clipboard">Copy to Clipboard</button><button data-action="magicQr">${m.qr ? 'Hide QR Code' : 'Show QR Code'}</button></div>
-      ${m.qr ? `<div class="stack center"><p class="muted">Sending ${esc(m.amount)}…</p><div class="qr big">${qrSvg(m.link)}</div></div>` : ''}
-      <p class="muted">Anyone who opens this link gets ${esc(m.amount)}. Send it to them however you like.</p>
-    </div>` : ''}`;
-  },
+  trade: () => `<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`,
   deposit: () => {
     const d = state.deposit || { asset: currency() };
     const a = assets[d.asset];
@@ -368,6 +391,7 @@ const views = {
 // ----- wiring -----
 main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
+main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
 main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.target.dataset.form]; if (fn) fn(e.target); });
 
 (async () => {
