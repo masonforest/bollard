@@ -189,13 +189,13 @@ async function computeQuote() {
   $('s-addr-box').classList.toggle('hidden', !needsAddr);
   $('s-addr-label').textContent = needsAddr ? `Receive address on ${assets[getAsset]?.chain || ''}` : '';
   const go = $('s-go'); go.disabled = true;
-  if (payAsset === getAsset) { $('s-quote').textContent = 'Pick two different assets.'; go.textContent = 'Pick two assets'; return; }
+  if (payAsset === getAsset) { $('s-quote').textContent = 'Pick two different tokens.'; go.textContent = 'Pick two tokens'; return; }
   let payAtoms;
   try { payAtoms = toAtoms($('s-pay-amount').value || '0', payAsset); } catch (e) { $('s-quote').textContent = e.message; go.textContent = 'Enter an amount'; return; }
   if (payAtoms === 0n) { $('s-get-amount').value = ''; $('s-quote').textContent = 'Enter an amount.'; go.textContent = 'Enter an amount'; return; }
-  $('s-quote').textContent = 'Looking for the best order…';
+  $('s-quote').textContent = 'Finding the best price…';
   const q = await bestQuote(payAsset, getAsset, payAtoms);
-  if (!q) { $('s-get-amount').value = ''; $('s-quote').textContent = `No resting order sells ${assets[getAsset].symbol} for ${assets[payAsset].symbol} at this size. Try Pro mode to rest your own order.`; go.textContent = 'No order available'; return; }
+  if (!q) { $('s-get-amount').value = ''; $('s-quote').textContent = `Nobody is selling ${assets[getAsset].symbol} for ${assets[payAsset].symbol} right now.`; go.textContent = 'Nothing to buy'; return; }
   quote = q;
   $('s-get-amount').value = fromAtoms(q.getAtoms, getAsset, false);
   const rate = Number(q.getAtoms) / 10 ** assets[getAsset].decimals / (Number(q.payAtoms) / 10 ** assets[payAsset].decimals);
