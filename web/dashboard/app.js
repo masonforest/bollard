@@ -114,7 +114,7 @@ function buildPickers() {
   for (const root of document.querySelectorAll('.pickers')) {
     const target = $(root.dataset.pick);
     // Dollars are the quote everywhere except in the simple card, where you can buy them by burning USDC on Ethereum.
-    const all = () => Object.values(assets).filter((a) => a.id !== 'eth:USDC' || root.dataset.pick === 's-asset');
+    const all = () => Object.values(assets).filter((a) => a.id !== 'eth:USDC');
     const chains = () => [...new Set(all().map((a) => a.chain))];
     root.innerHTML = `
       <div class="ac" data-ac="chain"><span class="lbl">Network</span><div class="ac-field"><span class="ic"></span><input autocomplete="off" spellcheck="false" placeholder="Network"></div><ul class="ac-list hidden"></ul></div>
@@ -163,8 +163,6 @@ function renderTokenButtons() { for (const root of document.querySelectorAll('.p
 function currentMarket() { return `${$('m-base-asset').value}/eth:USDC`; }
 // ------------------------------------------------------------------ simple: buy or sell for dollars
 let side = 'buy'; let simpleTimer = null; let plan = null; // plan: { fills: [{order, qty}], quote, short } or { deposit: order, qty }
-let payWith = 'usdc'; let depositWatch = null;
-$('s-pay').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; $('s-pay').dataset.touched = '1'; payWith = b.dataset.pay; for (const x of $('s-pay').children) x.classList.toggle('on', x === b); computeSimple(); };
 const USDC = 'eth:USDC';
 function setSide(v) { side = v; $('s-buy').classList.toggle('on', v === 'buy'); $('s-sell').classList.toggle('on', v === 'sell'); scheduleSimple(); }
 $('s-buy').onclick = () => setSide('buy'); $('s-sell').onclick = () => setSide('sell');
@@ -177,21 +175,6 @@ async function computeSimple() {
   $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`; $('s-unit').textContent = a.symbol;
   let qty; try { qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
   if (qty <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
-  // Buying can also mean bringing the coin in: burn it on its chain to your address and it is minted here one for one.
-  const canBurn = side === 'buy' && a.chain !== 'blrd';
-  $('s-pay-row').classList.toggle('hidden', !canBurn);
-  if (canBurn) {
-    $('s-pay').lastElementChild.textContent = `${a.symbol} on ${CHAIN_NAMES[a.chain] || a.chain}`;
-    const noUsdc = myBalance(USDC) !== null && myBalance(USDC) === 0n;
-    if ((asset === USDC || (noUsdc && !$('s-pay').dataset.touched)) && payWith === 'usdc') { payWith = 'chain'; for (const x of $('s-pay').children) x.classList.toggle('on', x.dataset.pay === 'chain'); }
-  }
-  if (asset === USDC && side === 'sell') { $('s-quote').textContent = 'Dollars are what everything else is sold for; pick another token.'; $('s-go').disabled = true; return; }
-  if (asset === USDC && payWith === 'usdc') { payWith = 'chain'; for (const x of $('s-pay').children) x.classList.toggle('on', x.dataset.pay === 'chain'); }
-  if (canBurn && payWith === 'chain') {
-    plan = { burn: true, asset, qty };
-    $('s-quote').innerHTML = `Send <b>${fromAtoms(qty, asset)}</b> to your ${a.symbol} address below. It is burned there and minted here, one for one, after ${a.chain === 'btc' ? 'one confirmation' : 'the block is final (about 15 minutes)'}.`;
-    $('s-go').disabled = !me(); $('s-go').textContent = 'Show my address'; return;
-  }
   const b = await j(`/book?market=${encodeURIComponent(asset + '/' + USDC)}`);
   // Buying takes asks, cheapest first; selling takes bids, highest first.
   const orders = side === 'buy' ? [...(b.asks || [])].sort((x, y) => x.price - y.price) : [...(b.bids || [])].sort((x, y) => y.price - x.price);
@@ -212,12 +195,6 @@ $('s-go').onclick = async () => {
   const asset = $('s-asset').value; const a = assets[asset];
   try {
     ensureKey();
-    if (plan.burn) {
-      const acct = await j(`/account/${me()}`);
-      showBurn(acct.burn[assets[plan.asset].chain], plan.asset, plan.qty);
-      $('s-go').disabled = false;
-      return;
-    }
     let got = 0n, paid = 0n;
     for (const f of plan.fills) {
       await send(api, null, TxType.Claim, { order_id: hex.dec(f.order.id), quantity: f.qty, receive_address: '' });
@@ -228,23 +205,6 @@ $('s-go').onclick = async () => {
     renderAccount(); 
   } catch (e) { $('s-error').textContent = e.message; $('s-go').disabled = false; }
 };
-function showBurn(address, asset, qty) {
-  const a = assets[asset];
-  $('s-deposit').classList.remove('hidden');
-  $('d-amount').textContent = fromAtoms(qty, asset); $('d-addr').textContent = address;
-  try { const q = qrcode(0, 'M'); q.addData(a.chain === 'btc' ? `bitcoin:${address}?amount=${fromAtoms(qty, asset, false)}` : address); q.make(); $('d-qr').innerHTML = q.createSvgTag({ cellSize: 3, margin: 2 }); } catch {}
-  $('d-status').textContent = `This is your own burn address on ${CHAIN_NAMES[a.chain] || a.chain}: anything sent there is gone from that chain and shows up here. Watching for it.`;
-  $('d-copy').onclick = async () => { try { await navigator.clipboard.writeText(address); } catch {} $('d-copy').textContent = 'Copied'; setTimeout(() => ($('d-copy').textContent = 'Copy address'), 1500); };
-  clearInterval(depositWatch);
-  const before = myBalance(asset);
-  depositWatch = setInterval(async () => {
-    try {
-      balances = await j(`/balances/${me()}`);
-      const now = myBalance(asset);
-      if (before !== null && now !== null && now > before) { clearInterval(depositWatch); $('s-deposit').classList.add('hidden'); $('s-result').textContent = `Received ${fromAtoms(now - before, asset)}; it is in your balance.`; renderAccount(); loadSimple(); }
-    } catch {}
-  }, 15000);
-}
 async function loadSimple() { if (me()) balances = await j(`/balances/${me()}`).catch(() => null); renderTokenButtons(); computeSimple(); }
 
 // ------------------------------------------------------------------ pro mode
