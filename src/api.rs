@@ -32,8 +32,8 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/find-payment", get(find_payment))
         .route("/balances/{account}", get(balances))
         .route("/activity/{account}", get(activity))
-        .route("/burns", get(burns))
-        .route("/dev/mint", post(dev_mint))
+        .route("/issuers", get(issuers))
+        .route("/oracle", get(oracle))
         .route("/keys", post(register_key))
         .route("/keys/{cred}", get(lookup_key))
         .route("/log", get(log_stream))
@@ -123,17 +123,14 @@ async fn book(State(n): S, Query(q): Query<BookQuery>) -> ApiResult {
 async fn account(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
     let pk = hex::decode(&pubkey)?;
     let a = sqlx::query_as::<_, db::Account>("select * from accounts where pubkey = $1").bind(&pk).fetch_optional(&n.db).await?;
-    let mut v = match a {
+    Ok(Json(match a {
         Some(a) => json!(a),
-        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0, "preferred": null}),
-    };
-    if crate::crypto::valid_account(&pk) {
-        v["burn"] = json!({ "btc": chain::burn::btc(&pk), "eth": chain::burn::eth(&pk) });
-    }
-    Ok(Json(v))
+        None => json!({"pubkey": pubkey, "nonce": 0, "balance": 0, "locked": 0, "preferred": null, "staked": 0, "unstaking": 0, "unstake_height": 0}),
+    }))
 }
 
-/// Everything an account holds: BLRD plus burn-minted balances summed per asset.
+/// Everything an account holds: BLRD plus option balances summed per asset,
+/// with the issuer lots behind them.
 async fn balances(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
     let pk = hex::decode(&pubkey)?;
     let a = sqlx::query_as::<_, db::Account>("select * from accounts where pubkey = $1").bind(&pk).fetch_optional(&n.db).await?;
@@ -145,15 +142,19 @@ async fn balances(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
             None => totals.push((l.asset.clone(), l.amount)),
         }
     }
+    let issuing = sqlx::query_as::<_, db::Issuer>("select * from issuers where account = $1 and issued > 0").bind(&pk).fetch_all(&n.db).await?;
     Ok(Json(json!({
         "account": pubkey,
         "preferred": a.as_ref().and_then(|a| a.preferred.clone()),
         "blrd": a.as_ref().map(|a| a.balance).unwrap_or(0),
         "blrd_locked": a.as_ref().map(|a| a.locked).unwrap_or(0),
-        "burn": { "btc": chain::burn::btc(&pk), "eth": chain::burn::eth(&pk) },
+        "blrd_staked": a.as_ref().map(|a| a.staked).unwrap_or(0),
+        "blrd_unstaking": a.as_ref().map(|a| a.unstaking).unwrap_or(0),
+        "unstake_height": a.as_ref().map(|a| a.unstake_height).unwrap_or(0),
         "nonce": a.as_ref().map(|a| a.nonce).unwrap_or(0),
         "assets": totals.iter().map(|(a, t)| json!({"asset": a, "amount": t})).collect::<Vec<_>>(),
         "lots": lots,
+        "issuing": issuing,
     })))
 }
 
@@ -176,45 +177,33 @@ async fn activity(State(n): S, Path(pubkey): Path<String>) -> ApiResult {
     let pk = hex::decode(&pubkey)?;
     let transfers = sqlx::query_as::<_, TransferRow>("select * from transfers where sender = $1 or receiver = $1 order by seq desc limit 200").bind(&pk).fetch_all(&n.db).await?;
     let matches = sqlx::query_as::<_, db::Match>("select * from matches where maker = $1 or taker = $1 order by seq desc limit 200").bind(&pk).fetch_all(&n.db).await?;
-    let burns = sqlx::query_as::<_, BurnRow>("select * from burns where account = $1 order by seq desc limit 200").bind(&pk).fetch_all(&n.db).await?;
-    Ok(Json(json!({"transfers": transfers, "matches": matches, "burns": burns})))
+    Ok(Json(json!({"transfers": transfers, "matches": matches})))
 }
 
-#[derive(sqlx::FromRow, serde::Serialize)]
-struct BurnRow {
-    txid: String,
-    asset: String,
-    #[serde(serialize_with = "crate::fbio::hex_bytes")]
-    account: Vec<u8>,
-    amount: i64,
-    block_hash: String,
-    block_height: i64,
-    seq: i64,
-    ts: i64,
-}
-
-/// Coins burned on their chains and minted here.
-async fn burns(State(n): S, Query(q): Query<ListQuery>) -> ApiResult {
-    let acct = q.account.as_deref().map(hex::decode).transpose()?;
-    let rows = sqlx::query_as::<_, BurnRow>("select * from burns where ($1::bytea is null or account = $1) order by seq desc limit $2").bind(acct).bind(q.limit.unwrap_or(100).clamp(1, 1000)).fetch_all(&n.db).await?;
-    Ok(Json(json!(rows)))
-}
-
-#[derive(Deserialize)]
-struct DevMint {
-    account: String,
-    asset: String,
-    amount: u64,
-}
-
-/// Development only: mint without a burn. Refused unless the node runs with DEV_MODE.
-async fn dev_mint(State(n): S, Json(b): Json<DevMint>) -> ApiResult {
-    if !n.cfg.dev_mode {
-        return Err(anyhow::anyhow!("not a development node").into());
+/// Prices the ledger uses for collateral: trade averages from its own books, the
+/// required stake ratio, and every issuer's standing against it.
+async fn oracle(State(n): S) -> ApiResult {
+    let height = n.height();
+    let mut c = n.db.acquire().await?;
+    let mut prices = serde_json::Map::new();
+    for a in chain::ASSETS {
+        prices.insert(a.id.to_string(), json!(crate::apply::oracle_price(&mut c, a.id, height).await?));
     }
-    let txid = format!("dev:{}", hex::encode(crate::crypto::sha256(&[b.account.as_bytes(), b.asset.as_bytes(), &b.amount.to_be_bytes(), &crate::node::now_ms().to_be_bytes()].concat())));
-    let e = n.append(crate::fbio::Body::Minted { account: hex::decode(&b.account)?, asset: b.asset, amount: b.amount, txid: txid.clone(), block_hash: "dev".into(), block_height: 0 }).await?;
-    Ok(Json(json!({"ok": true, "txid": txid, "seq": e.seq})))
+    let need = crate::apply::required_ratio_bps(&mut c, height).await?;
+    let issuers: Vec<(Vec<u8>,)> = sqlx::query_as("select distinct account from issuers where issued > 0").fetch_all(&mut *c).await?;
+    let mut standing = Vec::new();
+    for (acct,) in issuers {
+        let issued = crate::apply::issued_value(&mut c, &acct, height).await.unwrap_or(0);
+        let stake = crate::apply::stake_value(&mut c, &acct, height).await?;
+        standing.push(json!({"account": hex::encode(&acct), "issued_usdc": issued as i64, "stake_usdc": stake as i64, "ratio_bps": if issued > 0 { (stake * 10_000 / issued) as i64 } else { -1 }, "ok": issued == 0 || stake * 10_000 >= issued * need}));
+    }
+    Ok(Json(json!({"height": height, "prices": prices, "required_ratio_bps": need as i64, "base_ratio_bps": crate::apply::BASE_RATIO_BPS as i64, "liquidation_premium_bps": crate::apply::LIQUIDATION_PREMIUM_BPS as i64, "issuers": standing})))
+}
+
+async fn issuers(State(n): S) -> ApiResult {
+    let rows: Vec<(Vec<u8>, String, i64, i64, i64)> = sqlx::query_as("select i.account, i.asset, i.issued, a.staked, a.unstaking from issuers i join accounts a on a.pubkey = i.account where i.issued > 0 order by i.asset, a.staked desc").fetch_all(&n.db).await?;
+    let rows: Vec<Value> = rows.into_iter().map(|(acct, asset, issued, staked, unstaking)| json!({"account": hex::encode(acct), "asset": asset, "issued": issued, "staked": staked, "unstaking": unstaking})).collect();
+    Ok(Json(json!(rows)))
 }
 
 #[derive(Deserialize)]

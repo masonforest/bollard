@@ -2,7 +2,7 @@
 //! transactions and asserts what it sees on the chains; as follower it
 //! replays the leader's stream, checking every assertion itself.
 
-use crate::chain::{self, chain_params, Chains, PaymentStatus};
+use crate::chain::{self, chain_params, Chains, PaymentStatus, GRACE_BLOCKS};
 use crate::config::RunArgs;
 use crate::crypto::{self, Keypair};
 use crate::fbio::{self, Body, ParsedEntry};
@@ -209,17 +209,11 @@ impl Node {
                     format!("LegIncluded {} leg {leg}: chain says {st:?}", hex::encode(match_id)),
                 )
             }
-            Body::Minted { account, asset, amount, txid, block_hash, block_height } => {
-                if self.cfg.dev_mode && txid.starts_with("dev:") {
-                    return Ok(());
-                }
-                let a = chain::asset(asset).ok_or_else(|| anyhow!("unknown asset"))?;
-                let to = chain::burn::for_chain(a.chain, account).ok_or_else(|| anyhow!("no burn address on {}", a.chain))?;
-                let st = self.check_with_retry(|| self.chains.check_exact(a, txid, &to, *amount)).await?;
-                check(
-                    matches!(&st, PaymentStatus::Included { block_hash: bh, block_height: h, .. } if bh.eq_ignore_ascii_case(block_hash) && h == block_height),
-                    format!("Minted {txid}: chain says {st:?}"),
-                )
+            Body::MatchClosed { match_id } => {
+                let m = self.get_match(match_id).await?;
+                let (Some(txid), Some(bh), Some(h)) = (m.maker_txid, m.maker_block_hash, m.maker_block_height) else { bail!("MatchClosed before the maker leg was included") };
+                let deep = self.check_with_retry(|| self.chains.is_deep(&m.maker_chain, &txid, &bh, h as u64)).await?;
+                check(deep, format!("MatchClosed {}: maker payment is not deep", hex::encode(match_id)))
             }
             Body::ClaimVoid { match_id, reason: 2 } => {
                 let m = self.get_match(match_id).await?;
@@ -227,6 +221,15 @@ impl Node {
                 let asset = chain::asset(&m.taker_asset).ok_or_else(|| anyhow!("unknown asset"))?;
                 let st = self.check_with_retry(|| self.chains.check_payment(asset, &txid, &m.taker_pay_to, m.taker_amount as u64)).await?;
                 check(matches!(st, PaymentStatus::Reorged | PaymentStatus::Unseen), format!("ClaimVoid(reorg) {}: chain says {st:?}", hex::encode(match_id)))
+            }
+            Body::LegMissed { match_id, .. } => {
+                let m = self.get_match(match_id).await?;
+                if let (Some(txid), Some(bh), Some(h)) = (m.maker_txid, m.maker_block_hash, m.maker_block_height) {
+                    let deep = self.check_with_retry(|| self.chains.is_deep(&m.maker_chain, &txid, &bh, h as u64)).await?;
+                    check(!deep, format!("LegMissed {}: maker payment is deep", hex::encode(match_id)))
+                } else {
+                    Ok(())
+                }
             }
             _ => Ok(()),
         }
@@ -472,7 +475,8 @@ impl Node {
     async fn settle_match(&self, m: &db::Match, height: u32) -> Result<()> {
         let mid: [u8; 32] = m.id.clone().try_into().map_err(|_| anyhow!("bad match id"))?;
         let taker_params = chain_params(&m.taker_chain);
-                let taker_deadline = m.claimed_height as u32 + taker_params.taker_deadline;
+        let maker_params = chain_params(&m.maker_chain);
+        let taker_deadline = m.claimed_height as u32 + taker_params.taker_deadline;
 
         let Some(taker_txid) = m.taker_txid.clone() else {
             if m.kind == "deposit" && now_ms() >= m.claimed_ts as u64 + apply::CLAIM_WINDOW_MS {
@@ -500,6 +504,38 @@ impl Node {
             return Ok(());
         }
 
+        if m.kind != "exercise" {
+            return Ok(());
+        }
+        let inc = m.taker_included_height.unwrap_or(0) as u32;
+        let maker_deadline = inc + maker_params.maker_deadline + GRACE_BLOCKS;
+        let Some(maker_txid) = m.maker_txid.clone() else {
+            if height >= maker_deadline {
+                self.append(Body::LegMissed { match_id: mid, leg: 1 }).await?;
+            }
+            return Ok(());
+        };
+
+        if m.maker_included_height.is_none() {
+            let asset = chain::asset(&m.maker_asset).ok_or_else(|| anyhow!("unknown asset"))?;
+            match self.chains.check_payment(asset, &maker_txid, &m.maker_pay_to, m.maker_amount as u64).await? {
+                PaymentStatus::Included { block_hash, block_height, .. } => {
+                    self.append(Body::LegIncluded { match_id: mid, leg: 1, txid: maker_txid, block_hash, block_height }).await?;
+                }
+                _ if height >= maker_deadline => {
+                    self.append(Body::LegMissed { match_id: mid, leg: 1 }).await?;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        let (bh, bheight) = (m.maker_block_hash.clone().unwrap_or_default(), m.maker_block_height.unwrap_or(0) as u64);
+        if self.chains.is_deep(&m.maker_chain, &maker_txid, &bh, bheight).await? {
+            self.append(Body::MatchClosed { match_id: mid }).await?;
+        } else if height >= maker_deadline {
+            self.append(Body::LegMissed { match_id: mid, leg: 1 }).await?;
+        }
         Ok(())
     }
 }
@@ -538,7 +574,6 @@ pub async fn run(cfg: RunArgs) -> Result<()> {
     tokio::spawn(bitcoin_watch::run(node.clone()));
     tokio::spawn(node.clone().roles_loop());
     tokio::spawn(node.clone().settle_loop());
-    tokio::spawn(crate::burn_watch::run(node.clone()));
     axum::serve(listener, api::router(node)).await?;
     Ok(())
 }

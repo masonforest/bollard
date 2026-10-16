@@ -18,6 +18,9 @@ pub struct Account {
     pub balance: i64,
     pub locked: i64,
     pub preferred: Option<String>,
+    pub staked: i64,
+    pub unstaking: i64,
+    pub unstake_height: i32,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -28,6 +31,14 @@ pub struct Balance {
     #[serde(serialize_with = "hex_bytes")]
     pub issuer: Vec<u8>,
     pub amount: i64,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Issuer {
+    #[serde(serialize_with = "hex_bytes")]
+    pub account: Vec<u8>,
+    pub asset: String,
+    pub issued: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bollard</title>
-<meta name="description" content="Bollard: send, receive and trade across chains, instantly and for free. Balances are backed one for one by coins burned on their chains, finalized on Bitcoin.">
+<meta name="description" content="Bollard: send, receive and trade across chains, instantly and for free. Balances are bonded promises from makers, finalized on Bitcoin.">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -18,14 +18,14 @@
   </nav>
 
   <h1>Bollard</h1>
-  <p class="lead">A cross-chain exchange where coins come in by being burned, finalized on Bitcoin.</p>
+  <p class="lead">A cross-chain exchange where balances are bonded promises, finalized on Bitcoin.</p>
 
-  <p>Every account has a keyless burn address on each chain. Send bitcoin to yours and it is gone from Bitcoin and in your balance here, one for one. Balances move instantly and for free, trade against dollars on the book, and leave by being sold to someone coming in. No custodian, no bridge, nothing wrapped: the supply on Bollard is exactly what was burned.</p>
+  <p>Makers stake BLRD and issue options on coins they hold; one stake backs everything a maker issues. Holders send, receive and trade those options instantly and for free, in whatever currency they choose, and exercise them to take the real coin out. If a maker fails to deliver, a share of its stake goes to the holder, and anyone may deliver in its place. Nothing is wrapped and nobody holds custody.</p>
   <p>One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: every block runs a fee-weighted lottery over entries written to Bitcoin itself, and each winning entry commits to the log, which is how the log is finalized.</p>
 
   <div class="links">
     <a href="/"><b>App</b><span>A wallet: create a passkey, deposit, send in any currency, withdraw. Pro mode has the book and charts.</span></a>
-    <a href="/docs/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, burns, exits.</span></a>
+    <a href="/docs/whitepaper/"><b>White paper</b><span>The protocol in full: lottery, sequencing, options, stake.</span></a>
     <a href="https://github.com/masonforest/bollard"><b>Source</b><span>The node, in Rust. One binary and a Postgres database.</span></a>
     <a href="https://mainnet.bollard.exchange/status"><b>API</b><span>mainnet.bollard.exchange: JSON and server-sent events.</span></a>
   </div>
@@ -39,10 +39,17 @@ GENESIS_LEADER_URL=http://45.77.101.95 bollard run</code></pre>
   <p>A node follows the leader by default. To stand for leader, send a little bitcoin to the node's address and run <code>bollard enter --fee &lt;sats&gt;</code>. The fee is the entry's weight in the draw.</p>
 
   <h2>Make a market</h2>
-  <pre><code>bollard burn-address --account &lt;pubkey hex&gt;   # 1BoLLARD… and 0xb0110a4d…: send coins here to bring them in
+  <pre><code># stake 10 BLRD; one pool backs everything you issue
+bollard tx stake --amount 1000000000
+# issue 1 BTC of options
+bollard tx mint --asset btc:BTC --quantity 100000000
+# sell them for on-chain bitcoin; every claim gets its own address from the xpub
+bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 \
+  --price 100000000 --receive-address xpub... --expiry-height 980000
+# or rest them on the ledger; every market is quoted in USDC
 bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 \
   --price 9000000000000 --expiry-height 980000</code></pre>
-  <p class="muted">Amounts are in atoms: sats, gwei, 10<sup>-6</sup> USDC, rill (10<sup>-8</sup> BLRD). Prices are quote atoms per 100,000,000 base atoms. Holders never need BLRD; they use the <a href="/">wallet</a>. Making is done from the command line, since a maker must act while it is away from the browser.</p>
+  <p class="muted">Amounts are in atoms: sats, gwei, 10<sup>-6</sup> USDC, rill (10<sup>-8</sup> BLRD). Prices are quote atoms per 100,000,000 base atoms. Holders never need BLRD; people use the <a href="/">wallet</a>.</p>
 
   <footer>Bollard is early software on mainnet with small amounts. Read the white paper before trading.</footer>
 </main>

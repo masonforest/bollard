@@ -6,8 +6,8 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct BtcRpc {
     url: String,
-    pub esplora: String,
-    pub http: reqwest::Client,
+    esplora: String,
+    http: reqwest::Client,
 }
 
 impl BtcRpc {

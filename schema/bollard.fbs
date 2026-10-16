@@ -32,14 +32,27 @@ table ReportPayment { match_id: [ubyte]; leg: ubyte; txid: string; } // leg: 0 =
 
 // ---- options: bonded delivery promises that live on the ledger
 
-
+// An issuer creates `quantity` options on `asset` for itself, locking `bond`
+// BLRD as cover for everything it has issued on that asset.
+table Mint { asset: string; quantity: uint64; }
+// An issuer destroys options it holds and frees the matching share of cover.
+table Burn { asset: string; quantity: uint64; }
 // Send options (or BLRD when asset is "BLRD") to another account. If the
 // recipient prefers another currency the ledger swaps on the way.
 table Send { to: [ubyte]; asset: string; amount: uint64; }
+// Burn options and demand delivery of the real asset to receive_address.
+table Exercise { asset: string; quantity: uint64; receive_address: string; }
 // The currency an account wants to receive in.
 table SetCurrency { asset: string; }
 
-union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment, Send, SetCurrency }
+// Stake BLRD: one pool per maker that every option it issues draws on. Unstaking waits UNSTAKE_DELAY blocks.
+table Stake { amount: uint64; }
+table Unstake { amount: uint64; }
+// A holder of an under-collateralized issuer's options redeems them for BLRD
+// from the issuer's stake at a premium, instead of waiting for delivery.
+table Liquidate { issuer: [ubyte]; asset: string; quantity: uint64; }
+
+union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment, Mint, Burn, Send, Exercise, SetCurrency, Stake, Unstake, Liquidate }
 
 table Tx { account: [ubyte]; nonce: uint64; body: TxBody; }
 
@@ -59,11 +72,8 @@ table ClaimVoid   { match_id: [ubyte]; reason: ubyte; }   // 1 = taker deadline,
 table LegMissed   { match_id: [ubyte]; leg: ubyte; }
 table MatchClosed { match_id: [ubyte]; }
 table Handoff     { reason: string; replaced: [ubyte]; }
-// Coins burned on their chain to an account's burn address are minted on Bollard.
-// amount is the total paid to the burn address in that transaction, in atoms.
-table Minted      { account: [ubyte]; asset: string; amount: uint64; txid: string; block_hash: string; block_height: uint64; }
 
-union EntryBody { SignedTx, EpochStart, ClaimExpired, LegIncluded, ClaimVoid, LegMissed, MatchClosed, Handoff, Minted }
+union EntryBody { SignedTx, EpochStart, ClaimExpired, LegIncluded, ClaimVoid, LegMissed, MatchClosed, Handoff }
 
 table EntryContent {
   seq: uint64;

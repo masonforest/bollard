@@ -2,9 +2,6 @@
 //! which issuer. BLRD lives in `accounts`; everything else lives here. Lots
 //! are kept per issuer so an exercise knows whom to call on.
 
-/// Burn-minted assets have no issuer; every lot carries this empty issuer.
-pub const NO_ISSUER: &[u8] = &[];
-
 use anyhow::{anyhow, bail, Result};
 use sqlx::PgConnection;
 
@@ -60,6 +57,21 @@ pub async fn transfer(c: &mut PgConnection, from: &[u8], to: &[u8], asset: &str,
     for (issuer, n) in debit(c, from, asset, amount).await? {
         credit(c, to, asset, &issuer, n).await?;
     }
+    Ok(())
+}
+
+pub async fn issued(c: &mut PgConnection, account: &[u8], asset: &str) -> Result<i64> {
+    let row: Option<(i64,)> = sqlx::query_as("select issued from issuers where account = $1 and asset = $2").bind(account).bind(asset).fetch_optional(c).await?;
+    Ok(row.map(|r| r.0).unwrap_or(0))
+}
+
+pub async fn set_issued(c: &mut PgConnection, account: &[u8], asset: &str, issued: i64) -> Result<()> {
+    sqlx::query("insert into issuers (account, asset, issued) values ($1, $2, $3) on conflict (account, asset) do update set issued = $3")
+        .bind(account)
+        .bind(asset)
+        .bind(issued)
+        .execute(c)
+        .await?;
     Ok(())
 }
 

@@ -3,7 +3,7 @@
 import * as flatbuffers from 'flatbuffers';
 import * as secp from '@noble/secp256k1';
 
-export const TxType = { Transfer: 1, PlaceOrder: 2, CancelOrder: 3, Claim: 4, ReportPayment: 5, Send: 6, SetCurrency: 7 };
+export const TxType = { Transfer: 1, PlaceOrder: 2, CancelOrder: 3, Claim: 4, ReportPayment: 5, Mint: 6, Burn: 7, Send: 8, Exercise: 9, SetCurrency: 10, Stake: 11, Unstake: 12, Liquidate: 13 };
 
 export const hex = {
   enc: (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, '0')).join(''),
@@ -46,9 +46,28 @@ export function buildTx(account, nonce, type, body) {
       b.addFieldInt8(9, body.settle ?? 0, 0);
       off = b.endObject(); break;
     }
+    case TxType.Mint: {
+      const a = b.createString(body.asset);
+      b.startObject(2); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); off = b.endObject(); break;
+    }
+    case TxType.Liquidate: {
+      const i = b.createByteVector(body.issuer); const a = b.createString(body.asset);
+      b.startObject(3); b.addFieldOffset(0, i, 0); b.addFieldOffset(1, a, 0); b.addFieldInt64(2, big(body.quantity), 0n); off = b.endObject(); break;
+    }
+    case TxType.Stake: case TxType.Unstake: {
+      b.startObject(1); b.addFieldInt64(0, big(body.amount), 0n); off = b.endObject(); break;
+    }
+    case TxType.Burn: {
+      const a = b.createString(body.asset);
+      b.startObject(2); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); off = b.endObject(); break;
+    }
     case TxType.Send: {
       const to = b.createByteVector(body.to); const a = b.createString(body.asset);
       b.startObject(3); b.addFieldOffset(0, to, 0); b.addFieldOffset(1, a, 0); b.addFieldInt64(2, big(body.amount), 0n); off = b.endObject(); break;
+    }
+    case TxType.Exercise: {
+      const a = b.createString(body.asset); const ra = b.createString(body.receive_address ?? '');
+      b.startObject(3); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); b.addFieldOffset(2, ra, 0); off = b.endObject(); break;
     }
     case TxType.SetCurrency: {
       const a = b.createString(body.asset);
