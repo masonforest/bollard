@@ -2,12 +2,11 @@
 //! given address, and how deep is it. Amounts are in each asset's atom.
 
 pub mod btc;
+pub mod burn;
 pub mod evm;
 
 use anyhow::{anyhow, Result};
 use serde::Serialize;
-
-pub const GRACE_BLOCKS: u32 = 2;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AssetInfo {
@@ -107,6 +106,18 @@ impl Chains {
             "btc" => self.btc.check_payment(txid, to, amount).await,
             "eth" => self.eth.check_payment(asset, txid, to, amount).await,
             other => Err(anyhow!("no adapter for chain {other}")),
+        }
+    }
+
+    /// Exactly `amount` atoms of `asset` paid to `to` by `txid`, included in a block? Used to check Minted.
+    pub async fn check_exact(&self, asset: &AssetInfo, txid: &str, to: &str, amount: u64) -> Result<PaymentStatus> {
+        let st = self.check_payment(asset, txid, to, amount).await?;
+        if !matches!(st, PaymentStatus::Included { .. }) {
+            return Ok(st);
+        }
+        match self.check_payment(asset, txid, to, amount + 1).await? {
+            PaymentStatus::Wrong(_) => Ok(st),
+            _ => Ok(PaymentStatus::Wrong(format!("pays more than {amount} atoms"))),
         }
     }
 

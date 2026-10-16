@@ -13,23 +13,18 @@ pub mod fb {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_TX_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_TX_BODY: u8 = 12;
+pub const ENUM_MAX_TX_BODY: u8 = 7;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_TX_BODY: [TxBody; 13] = [
+pub const ENUM_VALUES_TX_BODY: [TxBody; 8] = [
   TxBody::NONE,
   TxBody::Transfer,
   TxBody::PlaceOrder,
   TxBody::CancelOrder,
   TxBody::Claim,
   TxBody::ReportPayment,
-  TxBody::Mint,
-  TxBody::Burn,
   TxBody::Send,
-  TxBody::Exercise,
   TxBody::SetCurrency,
-  TxBody::Stake,
-  TxBody::Unstake,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -43,16 +38,11 @@ impl TxBody {
   pub const CancelOrder: Self = Self(3);
   pub const Claim: Self = Self(4);
   pub const ReportPayment: Self = Self(5);
-  pub const Mint: Self = Self(6);
-  pub const Burn: Self = Self(7);
-  pub const Send: Self = Self(8);
-  pub const Exercise: Self = Self(9);
-  pub const SetCurrency: Self = Self(10);
-  pub const Stake: Self = Self(11);
-  pub const Unstake: Self = Self(12);
+  pub const Send: Self = Self(6);
+  pub const SetCurrency: Self = Self(7);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 12;
+  pub const ENUM_MAX: u8 = 7;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Transfer,
@@ -60,13 +50,8 @@ impl TxBody {
     Self::CancelOrder,
     Self::Claim,
     Self::ReportPayment,
-    Self::Mint,
-    Self::Burn,
     Self::Send,
-    Self::Exercise,
     Self::SetCurrency,
-    Self::Stake,
-    Self::Unstake,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -77,13 +62,8 @@ impl TxBody {
       Self::CancelOrder => Some("CancelOrder"),
       Self::Claim => Some("Claim"),
       Self::ReportPayment => Some("ReportPayment"),
-      Self::Mint => Some("Mint"),
-      Self::Burn => Some("Burn"),
       Self::Send => Some("Send"),
-      Self::Exercise => Some("Exercise"),
       Self::SetCurrency => Some("SetCurrency"),
-      Self::Stake => Some("Stake"),
-      Self::Unstake => Some("Unstake"),
       _ => None,
     }
   }
@@ -143,10 +123,10 @@ pub struct TxBodyUnionTableOffset {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_ENTRY_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_ENTRY_BODY: u8 = 8;
+pub const ENUM_MAX_ENTRY_BODY: u8 = 9;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 9] = [
+pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 10] = [
   EntryBody::NONE,
   EntryBody::SignedTx,
   EntryBody::EpochStart,
@@ -156,6 +136,7 @@ pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 9] = [
   EntryBody::LegMissed,
   EntryBody::MatchClosed,
   EntryBody::Handoff,
+  EntryBody::Minted,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -172,9 +153,10 @@ impl EntryBody {
   pub const LegMissed: Self = Self(6);
   pub const MatchClosed: Self = Self(7);
   pub const Handoff: Self = Self(8);
+  pub const Minted: Self = Self(9);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_MAX: u8 = 9;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::SignedTx,
@@ -185,6 +167,7 @@ impl EntryBody {
     Self::LegMissed,
     Self::MatchClosed,
     Self::Handoff,
+    Self::Minted,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -198,6 +181,7 @@ impl EntryBody {
       Self::LegMissed => Some("LegMissed"),
       Self::MatchClosed => Some("MatchClosed"),
       Self::Handoff => Some("Handoff"),
+      Self::Minted => Some("Minted"),
       _ => None,
     }
   }
@@ -972,232 +956,6 @@ impl ::core::fmt::Debug for ReportPayment<'_> {
       ds.finish()
   }
 }
-pub enum MintOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Mint<'a> {
-  pub _tab: ::flatbuffers::Table<'a>,
-}
-
-impl<'a> ::flatbuffers::Follow<'a> for Mint<'a> {
-  type Inner = Mint<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
-  }
-}
-
-impl<'a> Mint<'a> {
-  pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
-  pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-    Mint { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args MintArgs<'args>
-  ) -> ::flatbuffers::WIPOffset<Mint<'bldr>> {
-    let mut builder = MintBuilder::new(_fbb);
-    builder.add_quantity(args.quantity);
-    if let Some(x) = args.asset { builder.add_asset(x); }
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn asset(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Mint::VT_ASSET, None)}
-  }
-  #[inline]
-  pub fn quantity(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Mint::VT_QUANTITY, Some(0)).unwrap()}
-  }
-}
-
-impl ::flatbuffers::Verifiable for Mint<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut ::flatbuffers::Verifier, pos: usize
-  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-    v.visit_table(pos)?
-     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
-     .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct MintArgs<'a> {
-    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
-    pub quantity: u64,
-}
-impl<'a> Default for MintArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    MintArgs {
-      asset: None,
-      quantity: 0,
-    }
-  }
-}
-
-pub struct MintBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MintBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Mint::VT_ASSET, asset);
-  }
-  #[inline]
-  pub fn add_quantity(&mut self, quantity: u64) {
-    self.fbb_.push_slot::<u64>(Mint::VT_QUANTITY, quantity, 0);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> MintBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    MintBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> ::flatbuffers::WIPOffset<Mint<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    ::flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl ::core::fmt::Debug for Mint<'_> {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    let mut ds = f.debug_struct("Mint");
-      ds.field("asset", &self.asset());
-      ds.field("quantity", &self.quantity());
-      ds.finish()
-  }
-}
-pub enum BurnOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Burn<'a> {
-  pub _tab: ::flatbuffers::Table<'a>,
-}
-
-impl<'a> ::flatbuffers::Follow<'a> for Burn<'a> {
-  type Inner = Burn<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
-  }
-}
-
-impl<'a> Burn<'a> {
-  pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
-  pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-    Burn { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args BurnArgs<'args>
-  ) -> ::flatbuffers::WIPOffset<Burn<'bldr>> {
-    let mut builder = BurnBuilder::new(_fbb);
-    builder.add_quantity(args.quantity);
-    if let Some(x) = args.asset { builder.add_asset(x); }
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn asset(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Burn::VT_ASSET, None)}
-  }
-  #[inline]
-  pub fn quantity(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Burn::VT_QUANTITY, Some(0)).unwrap()}
-  }
-}
-
-impl ::flatbuffers::Verifiable for Burn<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut ::flatbuffers::Verifier, pos: usize
-  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-    v.visit_table(pos)?
-     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
-     .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct BurnArgs<'a> {
-    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
-    pub quantity: u64,
-}
-impl<'a> Default for BurnArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    BurnArgs {
-      asset: None,
-      quantity: 0,
-    }
-  }
-}
-
-pub struct BurnBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> BurnBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Burn::VT_ASSET, asset);
-  }
-  #[inline]
-  pub fn add_quantity(&mut self, quantity: u64) {
-    self.fbb_.push_slot::<u64>(Burn::VT_QUANTITY, quantity, 0);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> BurnBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    BurnBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> ::flatbuffers::WIPOffset<Burn<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    ::flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl ::core::fmt::Debug for Burn<'_> {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    let mut ds = f.debug_struct("Burn");
-      ds.field("asset", &self.asset());
-      ds.field("quantity", &self.quantity());
-      ds.finish()
-  }
-}
 pub enum SendOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -1328,136 +1086,6 @@ impl ::core::fmt::Debug for Send<'_> {
       ds.finish()
   }
 }
-pub enum ExerciseOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Exercise<'a> {
-  pub _tab: ::flatbuffers::Table<'a>,
-}
-
-impl<'a> ::flatbuffers::Follow<'a> for Exercise<'a> {
-  type Inner = Exercise<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
-  }
-}
-
-impl<'a> Exercise<'a> {
-  pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
-  pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
-  pub const VT_RECEIVE_ADDRESS: ::flatbuffers::VOffsetT = 8;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-    Exercise { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args ExerciseArgs<'args>
-  ) -> ::flatbuffers::WIPOffset<Exercise<'bldr>> {
-    let mut builder = ExerciseBuilder::new(_fbb);
-    builder.add_quantity(args.quantity);
-    if let Some(x) = args.receive_address { builder.add_receive_address(x); }
-    if let Some(x) = args.asset { builder.add_asset(x); }
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn asset(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Exercise::VT_ASSET, None)}
-  }
-  #[inline]
-  pub fn quantity(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Exercise::VT_QUANTITY, Some(0)).unwrap()}
-  }
-  #[inline]
-  pub fn receive_address(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Exercise::VT_RECEIVE_ADDRESS, None)}
-  }
-}
-
-impl ::flatbuffers::Verifiable for Exercise<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut ::flatbuffers::Verifier, pos: usize
-  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-    v.visit_table(pos)?
-     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
-     .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
-     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("receive_address", Self::VT_RECEIVE_ADDRESS, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct ExerciseArgs<'a> {
-    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
-    pub quantity: u64,
-    pub receive_address: Option<::flatbuffers::WIPOffset<&'a str>>,
-}
-impl<'a> Default for ExerciseArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    ExerciseArgs {
-      asset: None,
-      quantity: 0,
-      receive_address: None,
-    }
-  }
-}
-
-pub struct ExerciseBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ExerciseBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Exercise::VT_ASSET, asset);
-  }
-  #[inline]
-  pub fn add_quantity(&mut self, quantity: u64) {
-    self.fbb_.push_slot::<u64>(Exercise::VT_QUANTITY, quantity, 0);
-  }
-  #[inline]
-  pub fn add_receive_address(&mut self, receive_address: ::flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Exercise::VT_RECEIVE_ADDRESS, receive_address);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ExerciseBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    ExerciseBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> ::flatbuffers::WIPOffset<Exercise<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    ::flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl ::core::fmt::Debug for Exercise<'_> {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    let mut ds = f.debug_struct("Exercise");
-      ds.field("asset", &self.asset());
-      ds.field("quantity", &self.quantity());
-      ds.field("receive_address", &self.receive_address());
-      ds.finish()
-  }
-}
 pub enum SetCurrencyOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -1551,198 +1179,6 @@ impl ::core::fmt::Debug for SetCurrency<'_> {
   fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
     let mut ds = f.debug_struct("SetCurrency");
       ds.field("asset", &self.asset());
-      ds.finish()
-  }
-}
-pub enum StakeOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Stake<'a> {
-  pub _tab: ::flatbuffers::Table<'a>,
-}
-
-impl<'a> ::flatbuffers::Follow<'a> for Stake<'a> {
-  type Inner = Stake<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
-  }
-}
-
-impl<'a> Stake<'a> {
-  pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-    Stake { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args StakeArgs
-  ) -> ::flatbuffers::WIPOffset<Stake<'bldr>> {
-    let mut builder = StakeBuilder::new(_fbb);
-    builder.add_amount(args.amount);
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn amount(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Stake::VT_AMOUNT, Some(0)).unwrap()}
-  }
-}
-
-impl ::flatbuffers::Verifiable for Stake<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut ::flatbuffers::Verifier, pos: usize
-  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-    v.visit_table(pos)?
-     .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct StakeArgs {
-    pub amount: u64,
-}
-impl<'a> Default for StakeArgs {
-  #[inline]
-  fn default() -> Self {
-    StakeArgs {
-      amount: 0,
-    }
-  }
-}
-
-pub struct StakeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> StakeBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_amount(&mut self, amount: u64) {
-    self.fbb_.push_slot::<u64>(Stake::VT_AMOUNT, amount, 0);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> StakeBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    StakeBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> ::flatbuffers::WIPOffset<Stake<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    ::flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl ::core::fmt::Debug for Stake<'_> {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    let mut ds = f.debug_struct("Stake");
-      ds.field("amount", &self.amount());
-      ds.finish()
-  }
-}
-pub enum UnstakeOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Unstake<'a> {
-  pub _tab: ::flatbuffers::Table<'a>,
-}
-
-impl<'a> ::flatbuffers::Follow<'a> for Unstake<'a> {
-  type Inner = Unstake<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
-  }
-}
-
-impl<'a> Unstake<'a> {
-  pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-    Unstake { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
-    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args UnstakeArgs
-  ) -> ::flatbuffers::WIPOffset<Unstake<'bldr>> {
-    let mut builder = UnstakeBuilder::new(_fbb);
-    builder.add_amount(args.amount);
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn amount(&self) -> u64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Unstake::VT_AMOUNT, Some(0)).unwrap()}
-  }
-}
-
-impl ::flatbuffers::Verifiable for Unstake<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut ::flatbuffers::Verifier, pos: usize
-  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-    v.visit_table(pos)?
-     .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct UnstakeArgs {
-    pub amount: u64,
-}
-impl<'a> Default for UnstakeArgs {
-  #[inline]
-  fn default() -> Self {
-    UnstakeArgs {
-      amount: 0,
-    }
-  }
-}
-
-pub struct UnstakeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> UnstakeBuilder<'a, 'b, A> {
-  #[inline]
-  pub fn add_amount(&mut self, amount: u64) {
-    self.fbb_.push_slot::<u64>(Unstake::VT_AMOUNT, amount, 0);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> UnstakeBuilder<'a, 'b, A> {
-    let start = _fbb.start_table();
-    UnstakeBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> ::flatbuffers::WIPOffset<Unstake<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    ::flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl ::core::fmt::Debug for Unstake<'_> {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    let mut ds = f.debug_struct("Unstake");
-      ds.field("amount", &self.amount());
       ds.finish()
   }
 }
@@ -1890,36 +1326,6 @@ impl<'a> Tx<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
-  pub fn body_as_mint(&self) -> Option<Mint<'a>> {
-    if self.body_type() == TxBody::Mint {
-      self.body().map(|t| {
-       // Safety:
-       // Created from a valid Table for this object
-       // Which contains a valid union in this slot
-       unsafe { Mint::init_from_table(t) }
-     })
-    } else {
-      None
-    }
-  }
-
-  #[inline]
-  #[allow(non_snake_case)]
-  pub fn body_as_burn(&self) -> Option<Burn<'a>> {
-    if self.body_type() == TxBody::Burn {
-      self.body().map(|t| {
-       // Safety:
-       // Created from a valid Table for this object
-       // Which contains a valid union in this slot
-       unsafe { Burn::init_from_table(t) }
-     })
-    } else {
-      None
-    }
-  }
-
-  #[inline]
-  #[allow(non_snake_case)]
   pub fn body_as_send(&self) -> Option<Send<'a>> {
     if self.body_type() == TxBody::Send {
       self.body().map(|t| {
@@ -1935,21 +1341,6 @@ impl<'a> Tx<'a> {
 
   #[inline]
   #[allow(non_snake_case)]
-  pub fn body_as_exercise(&self) -> Option<Exercise<'a>> {
-    if self.body_type() == TxBody::Exercise {
-      self.body().map(|t| {
-       // Safety:
-       // Created from a valid Table for this object
-       // Which contains a valid union in this slot
-       unsafe { Exercise::init_from_table(t) }
-     })
-    } else {
-      None
-    }
-  }
-
-  #[inline]
-  #[allow(non_snake_case)]
   pub fn body_as_set_currency(&self) -> Option<SetCurrency<'a>> {
     if self.body_type() == TxBody::SetCurrency {
       self.body().map(|t| {
@@ -1957,36 +1348,6 @@ impl<'a> Tx<'a> {
        // Created from a valid Table for this object
        // Which contains a valid union in this slot
        unsafe { SetCurrency::init_from_table(t) }
-     })
-    } else {
-      None
-    }
-  }
-
-  #[inline]
-  #[allow(non_snake_case)]
-  pub fn body_as_stake(&self) -> Option<Stake<'a>> {
-    if self.body_type() == TxBody::Stake {
-      self.body().map(|t| {
-       // Safety:
-       // Created from a valid Table for this object
-       // Which contains a valid union in this slot
-       unsafe { Stake::init_from_table(t) }
-     })
-    } else {
-      None
-    }
-  }
-
-  #[inline]
-  #[allow(non_snake_case)]
-  pub fn body_as_unstake(&self) -> Option<Unstake<'a>> {
-    if self.body_type() == TxBody::Unstake {
-      self.body().map(|t| {
-       // Safety:
-       // Created from a valid Table for this object
-       // Which contains a valid union in this slot
-       unsafe { Unstake::init_from_table(t) }
      })
     } else {
       None
@@ -2010,13 +1371,8 @@ impl ::flatbuffers::Verifiable for Tx<'_> {
           TxBody::CancelOrder => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<CancelOrder>>("TxBody::CancelOrder", pos),
           TxBody::Claim => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Claim>>("TxBody::Claim", pos),
           TxBody::ReportPayment => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ReportPayment>>("TxBody::ReportPayment", pos),
-          TxBody::Mint => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Mint>>("TxBody::Mint", pos),
-          TxBody::Burn => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Burn>>("TxBody::Burn", pos),
           TxBody::Send => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Send>>("TxBody::Send", pos),
-          TxBody::Exercise => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Exercise>>("TxBody::Exercise", pos),
           TxBody::SetCurrency => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SetCurrency>>("TxBody::SetCurrency", pos),
-          TxBody::Stake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Stake>>("TxBody::Stake", pos),
-          TxBody::Unstake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Unstake>>("TxBody::Unstake", pos),
           _ => Ok(()),
         }
      })?
@@ -2120,20 +1476,6 @@ impl ::core::fmt::Debug for Tx<'_> {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
           }
         },
-        TxBody::Mint => {
-          if let Some(x) = self.body_as_mint() {
-            ds.field("body", &x)
-          } else {
-            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
-        TxBody::Burn => {
-          if let Some(x) = self.body_as_burn() {
-            ds.field("body", &x)
-          } else {
-            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
         TxBody::Send => {
           if let Some(x) = self.body_as_send() {
             ds.field("body", &x)
@@ -2141,29 +1483,8 @@ impl ::core::fmt::Debug for Tx<'_> {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
           }
         },
-        TxBody::Exercise => {
-          if let Some(x) = self.body_as_exercise() {
-            ds.field("body", &x)
-          } else {
-            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
         TxBody::SetCurrency => {
           if let Some(x) = self.body_as_set_currency() {
-            ds.field("body", &x)
-          } else {
-            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
-        TxBody::Stake => {
-          if let Some(x) = self.body_as_stake() {
-            ds.field("body", &x)
-          } else {
-            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
-          }
-        },
-        TxBody::Unstake => {
-          if let Some(x) = self.body_as_unstake() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
@@ -3141,6 +2462,187 @@ impl ::core::fmt::Debug for Handoff<'_> {
       ds.finish()
   }
 }
+pub enum MintedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Minted<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for Minted<'a> {
+  type Inner = Minted<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> Minted<'a> {
+  pub const VT_ACCOUNT: ::flatbuffers::VOffsetT = 4;
+  pub const VT_ASSET: ::flatbuffers::VOffsetT = 6;
+  pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 8;
+  pub const VT_TXID: ::flatbuffers::VOffsetT = 10;
+  pub const VT_BLOCK_HASH: ::flatbuffers::VOffsetT = 12;
+  pub const VT_BLOCK_HEIGHT: ::flatbuffers::VOffsetT = 14;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Minted { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args MintedArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<Minted<'bldr>> {
+    let mut builder = MintedBuilder::new(_fbb);
+    builder.add_block_height(args.block_height);
+    builder.add_amount(args.amount);
+    if let Some(x) = args.block_hash { builder.add_block_hash(x); }
+    if let Some(x) = args.txid { builder.add_txid(x); }
+    if let Some(x) = args.asset { builder.add_asset(x); }
+    if let Some(x) = args.account { builder.add_account(x); }
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn account(&self) -> Option<::flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u8>>>(Minted::VT_ACCOUNT, None)}
+  }
+  #[inline]
+  pub fn asset(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Minted::VT_ASSET, None)}
+  }
+  #[inline]
+  pub fn amount(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Minted::VT_AMOUNT, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn txid(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Minted::VT_TXID, None)}
+  }
+  #[inline]
+  pub fn block_hash(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Minted::VT_BLOCK_HASH, None)}
+  }
+  #[inline]
+  pub fn block_height(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Minted::VT_BLOCK_HEIGHT, Some(0)).unwrap()}
+  }
+}
+
+impl ::flatbuffers::Verifiable for Minted<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u8>>>("account", Self::VT_ACCOUNT, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
+     .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("txid", Self::VT_TXID, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("block_hash", Self::VT_BLOCK_HASH, false)?
+     .visit_field::<u64>("block_height", Self::VT_BLOCK_HEIGHT, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct MintedArgs<'a> {
+    pub account: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u8>>>,
+    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub amount: u64,
+    pub txid: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub block_hash: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub block_height: u64,
+}
+impl<'a> Default for MintedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    MintedArgs {
+      account: None,
+      asset: None,
+      amount: 0,
+      txid: None,
+      block_hash: None,
+      block_height: 0,
+    }
+  }
+}
+
+pub struct MintedBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MintedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_account(&mut self, account: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Minted::VT_ACCOUNT, account);
+  }
+  #[inline]
+  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Minted::VT_ASSET, asset);
+  }
+  #[inline]
+  pub fn add_amount(&mut self, amount: u64) {
+    self.fbb_.push_slot::<u64>(Minted::VT_AMOUNT, amount, 0);
+  }
+  #[inline]
+  pub fn add_txid(&mut self, txid: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Minted::VT_TXID, txid);
+  }
+  #[inline]
+  pub fn add_block_hash(&mut self, block_hash: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Minted::VT_BLOCK_HASH, block_hash);
+  }
+  #[inline]
+  pub fn add_block_height(&mut self, block_height: u64) {
+    self.fbb_.push_slot::<u64>(Minted::VT_BLOCK_HEIGHT, block_height, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> MintedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    MintedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Minted<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for Minted<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Minted");
+      ds.field("account", &self.account());
+      ds.field("asset", &self.asset());
+      ds.field("amount", &self.amount());
+      ds.field("txid", &self.txid());
+      ds.field("block_hash", &self.block_hash());
+      ds.field("block_height", &self.block_height());
+      ds.finish()
+  }
+}
 pub enum EntryContentOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -3355,6 +2857,21 @@ impl<'a> EntryContent<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_minted(&self) -> Option<Minted<'a>> {
+    if self.body_type() == EntryBody::Minted {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Minted::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl ::flatbuffers::Verifiable for EntryContent<'_> {
@@ -3377,6 +2894,7 @@ impl ::flatbuffers::Verifiable for EntryContent<'_> {
           EntryBody::LegMissed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<LegMissed>>("EntryBody::LegMissed", pos),
           EntryBody::MatchClosed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<MatchClosed>>("EntryBody::MatchClosed", pos),
           EntryBody::Handoff => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Handoff>>("EntryBody::Handoff", pos),
+          EntryBody::Minted => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Minted>>("EntryBody::Minted", pos),
           _ => Ok(()),
         }
      })?
@@ -3517,6 +3035,13 @@ impl ::core::fmt::Debug for EntryContent<'_> {
         },
         EntryBody::Handoff => {
           if let Some(x) = self.body_as_handoff() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        EntryBody::Minted => {
+          if let Some(x) = self.body_as_minted() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

@@ -50,17 +50,12 @@ pub enum TxBody {
         leg: u8,
         txid: String,
     },
-    Mint { asset: String, quantity: u64 },
-    Stake { amount: u64 },
-    Unstake { amount: u64 },
-    Burn { asset: String, quantity: u64 },
     Send {
         #[serde(serialize_with = "hex_bytes")]
         to: Vec<u8>,
         asset: String,
         amount: u64,
     },
-    Exercise { asset: String, quantity: u64, receive_address: String },
     SetCurrency { asset: String },
 }
 
@@ -94,6 +89,7 @@ pub enum Body {
     LegMissed { #[serde(serialize_with = "hex_bytes")] match_id: [u8; 32], leg: u8 },
     MatchClosed { #[serde(serialize_with = "hex_bytes")] match_id: [u8; 32] },
     Handoff { reason: String, #[serde(serialize_with = "hex_bytes")] replaced: Vec<u8> },
+    Minted { #[serde(serialize_with = "hex_bytes")] account: Vec<u8>, asset: String, amount: u64, txid: String, block_hash: String, block_height: u64 },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -123,13 +119,8 @@ impl ParsedEntry {
                 TxBody::CancelOrder { .. } => "CancelOrder",
                 TxBody::Claim { .. } => "Claim",
                 TxBody::ReportPayment { .. } => "ReportPayment",
-                TxBody::Mint { .. } => "Mint",
-                TxBody::Burn { .. } => "Burn",
                 TxBody::Send { .. } => "Send",
-                TxBody::Exercise { .. } => "Exercise",
                 TxBody::SetCurrency { .. } => "SetCurrency",
-                TxBody::Stake { .. } => "Stake",
-                TxBody::Unstake { .. } => "Unstake",
             },
             Body::EpochStart { .. } => "EpochStart",
             Body::ClaimExpired { .. } => "ClaimExpired",
@@ -138,6 +129,7 @@ impl ParsedEntry {
             Body::LegMissed { .. } => "LegMissed",
             Body::MatchClosed { .. } => "MatchClosed",
             Body::Handoff { .. } => "Handoff",
+            Body::Minted { .. } => "Minted",
         }
     }
 }
@@ -195,25 +187,10 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let args = fb::ReportPaymentArgs { match_id: Some(m), leg: *leg, txid: Some(t) };
             (fb::TxBody::ReportPayment, fb::ReportPayment::create(&mut b, &args).as_union_value())
         }
-        TxBody::Mint { asset, quantity } => {
-            let a = b.create_string(asset);
-            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity }).as_union_value())
-        }
-        TxBody::Stake { amount } => (fb::TxBody::Stake, fb::Stake::create(&mut b, &fb::StakeArgs { amount: *amount }).as_union_value()),
-        TxBody::Unstake { amount } => (fb::TxBody::Unstake, fb::Unstake::create(&mut b, &fb::UnstakeArgs { amount: *amount }).as_union_value()),
-        TxBody::Burn { asset, quantity } => {
-            let a = b.create_string(asset);
-            (fb::TxBody::Burn, fb::Burn::create(&mut b, &fb::BurnArgs { asset: Some(a), quantity: *quantity }).as_union_value())
-        }
         TxBody::Send { to, asset, amount } => {
             let to = b.create_vector(to);
             let a = b.create_string(asset);
             (fb::TxBody::Send, fb::Send::create(&mut b, &fb::SendArgs { to: Some(to), asset: Some(a), amount: *amount }).as_union_value())
-        }
-        TxBody::Exercise { asset, quantity, receive_address } => {
-            let a = b.create_string(asset);
-            let ra = b.create_string(receive_address);
-            (fb::TxBody::Exercise, fb::Exercise::create(&mut b, &fb::ExerciseArgs { asset: Some(a), quantity: *quantity, receive_address: Some(ra) }).as_union_value())
         }
         TxBody::SetCurrency { asset } => {
             let a = b.create_string(asset);
@@ -268,23 +245,9 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
             let t = tx.body_as_report_payment().ok_or_else(|| anyhow!("bad ReportPayment"))?;
             TxBody::ReportPayment { match_id: bytes(t.match_id()).to_vec(), leg: t.leg(), txid: t.txid().unwrap_or("").to_string() }
         }
-        fb::TxBody::Mint => {
-            let t = tx.body_as_mint().ok_or_else(|| anyhow!("bad Mint"))?;
-            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
-        }
-        fb::TxBody::Stake => TxBody::Stake { amount: tx.body_as_stake().ok_or_else(|| anyhow!("bad Stake"))?.amount() },
-        fb::TxBody::Unstake => TxBody::Unstake { amount: tx.body_as_unstake().ok_or_else(|| anyhow!("bad Unstake"))?.amount() },
-        fb::TxBody::Burn => {
-            let t = tx.body_as_burn().ok_or_else(|| anyhow!("bad Burn"))?;
-            TxBody::Burn { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
-        }
         fb::TxBody::Send => {
             let t = tx.body_as_send().ok_or_else(|| anyhow!("bad Send"))?;
             TxBody::Send { to: bytes(t.to()).to_vec(), asset: t.asset().unwrap_or("").to_string(), amount: t.amount() }
-        }
-        fb::TxBody::Exercise => {
-            let t = tx.body_as_exercise().ok_or_else(|| anyhow!("bad Exercise"))?;
-            TxBody::Exercise { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), receive_address: t.receive_address().unwrap_or("").to_string() }
         }
         fb::TxBody::SetCurrency => {
             let t = tx.body_as_set_currency().ok_or_else(|| anyhow!("bad SetCurrency"))?;
@@ -360,6 +323,14 @@ pub fn build_entry_content(seq: u64, prev: &[u8; 32], height: u32, time: u64, le
             let rp = b.create_vector(replaced);
             (fb::EntryBody::Handoff, fb::Handoff::create(&mut b, &fb::HandoffArgs { reason: Some(r), replaced: Some(rp) }).as_union_value())
         }
+        Body::Minted { account, asset, amount, txid, block_hash, block_height } => {
+            let a = b.create_vector(account);
+            let s = b.create_string(asset);
+            let t = b.create_string(txid);
+            let bh = b.create_string(block_hash);
+            let args = fb::MintedArgs { account: Some(a), asset: Some(s), amount: *amount, txid: Some(t), block_hash: Some(bh), block_height: *block_height };
+            (fb::EntryBody::Minted, fb::Minted::create(&mut b, &args).as_union_value())
+        }
     };
     let args = fb::EntryContentArgs { seq, prev: Some(prev), height, time, body_type: bt, body: Some(bo), leader: Some(leader_v) };
     let c = fb::EntryContent::create(&mut b, &args);
@@ -427,6 +398,17 @@ pub fn parse_entry(buf: &[u8]) -> Result<ParsedEntry> {
         fb::EntryBody::Handoff => {
             let t = c.body_as_handoff().ok_or_else(|| anyhow!("bad Handoff"))?;
             Body::Handoff { reason: t.reason().unwrap_or("").to_string(), replaced: bytes(t.replaced()).to_vec() }
+        }
+        fb::EntryBody::Minted => {
+            let t = c.body_as_minted().ok_or_else(|| anyhow!("bad Minted"))?;
+            Body::Minted {
+                account: bytes(t.account()).to_vec(),
+                asset: t.asset().unwrap_or("").to_string(),
+                amount: t.amount(),
+                txid: t.txid().unwrap_or("").to_string(),
+                block_hash: t.block_hash().unwrap_or("").to_string(),
+                block_height: t.block_height(),
+            }
         }
         _ => bail!("unknown entry body"),
     };

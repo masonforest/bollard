@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-title" content="Bollard">
 <title>Bollard</title>
-<meta name="description" content="Send, receive and swap across chains. Instant, free, backed by staked makers and finalized on Bitcoin.">
+<meta name="description" content="Send, receive and swap across chains. Instant, free, backed one for one by coins burned on their chains, and finalized on Bitcoin.">
 <script type="importmap">
 { "imports": {
   "flatbuffers": "https://unpkg.com/flatbuffers@25.2.10/mjs/flatbuffers.js",
@@ -192,6 +192,7 @@ const actions = {
     endFlight(null);
     await refresh();
   }),
+  cancelWithdraw: (el) => run(async () => { await tx(TxType.CancelOrder, { order_id: hex.dec(el.dataset.value) }); await loadWithdrawals(); await refresh(); }),
   dismissAccept: () => { state.accept = null; history.replaceState(null, '', location.pathname); render(); },
   accept: () => run(async () => {
     const a = state.accept; const signer = signers.secret(a.secret);
@@ -204,7 +205,7 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; state.qr = null; if (state.view === 'activity') loadActivity(); render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; state.error = ''; state.success = null; state.qr = null; if (state.view === 'activity') loadActivity(); if (state.view === 'withdraw') loadWithdrawals(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
 };
@@ -226,13 +227,15 @@ const forms = {
   withdraw: (form) => run(async () => {
     const asset = form.asset.value; const amount = toAtoms(form.amount.value, asset);
     const address = form.to.value.trim();
-    if (!address) throw new Error('Enter the address to deliver to.');
-    await tx(TxType.Exercise, { asset, quantity: amount, receive_address: address });
-    state.success = `Withdrawing ${money(amount, asset)}: a maker delivers to ${short(address, 12)} shortly.`; state.view = 'home';
+    if (!address) throw new Error('Enter the address to be paid at.');
+    const st = await j('/status');
+    await tx(TxType.PlaceOrder, { market: `${asset}/${asset}`, side: 1, quantity: amount, price: 100000000n, bond: 0n, claim_bond: 0n, fill_policy: 1, receive_address: address, expiry_height: (st.bitcoin?.height || 0) + 1000, settle: 1 });
+    state.success = `Withdrawing ${money(amount, asset)}: a buyer pays ${short(address, 12)} on chain and takes your balance.`; state.view = 'home';
     await refresh();
   }),
 };
 
+async function loadWithdrawals() { if (me()) { state.withdrawals = (await j(`/orders?account=${me()}&status=open&limit=50`)).filter((o) => o.settle === 1); render(); } }
 async function loadActivity() { if (me()) { state.activity = await j(`/activity/${me()}`); render(); } }
 
 // ----- views -----
@@ -326,14 +329,16 @@ const views = {
   trade: () => `<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`,
   withdraw: () => {
     const held = (state.info?.assets || []).filter((x) => x.amount > 0);
+    const open = (state.withdrawals || []);
     return `
       <h2>Withdraw</h2>
+      ${open.length ? `<ul>${open.map((o) => `<li><span>${money(o.qty_left, o.base)} to ${short(o.recv_addr, 12)}<span class="sub">waiting for a buyer to pay you on chain</span></span><button class="link" data-action="cancelWithdraw" data-value="${o.id}">Cancel</button></li>`).join('')}</ul>` : ''}
       ${held.length ? `
       <form data-form="withdraw" class="stack">
         <div class="field"><span class="label">Currency</span><select name="asset">${held.map((x) => `<option value="${x.asset}">${NAMES[x.asset] || x.asset} · ${money(x.amount, x.asset)}</option>`).join('')}</select></div>
         <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
-        <div class="field"><span class="label">Deliver to (address on that chain)</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
-        <p class="muted">The maker who issued these delivers the real coins; their stake pays you if they don't.</p>
+        <div class="field"><span class="label">Paid to (your address on that chain)</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
+        <p class="muted">Coins on Bollard were burned to get here, so leaving means selling to someone coming in. Your balance is offered one for one; whoever takes it pays your address on chain, and the ledger hands them your balance once the payment is in a block. You can cancel until then.</p>
         <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Withdraw</button>
       </form>` : '<p class="muted center">Nothing to withdraw yet.</p>'}`;
   },
@@ -345,10 +350,11 @@ const views = {
       rows.push({ seq: t.seq, ts: t.ts, label: out ? 'Sent' : 'Received', value: out ? `−${money(t.amount, t.asset)}` : `+${money(t.delivered, t.delivered_asset)}`, sub: out && t.delivered_asset !== t.asset ? `arrived as ${money(t.delivered, t.delivered_asset)}` : short(out ? t.receiver : t.sender, 12) });
     }
     const sendSeqs = new Set(act.transfers.map((t) => t.seq));
+    for (const b of act.burns || []) rows.push({ seq: b.seq, ts: b.ts, label: 'Deposited', value: `+${money(b.amount, b.asset)}`, sub: `burned on ${CHAIN[assets[b.asset]?.chain] || ''} · ${short(b.txid, 12)}` });
     for (const m of act.matches) {
       if (m.kind === 'trade' && sendSeqs.has(m.seq)) continue; // the conversion inside a send is shown on the send itself
-      if (m.kind === 'deposit' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Deposit', value: `+${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? 'done' : m.status === 'open' ? (m.taker_txid ? 'payment seen, waiting for a block' : 'waiting for your payment') : m.status });
-      else if (m.kind === 'exercise' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Withdrawal', value: `−${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? 'delivered' : m.status === 'open' ? (m.maker_txid ? 'delivery sent, waiting for a block' : 'waiting for the maker to deliver') : m.status === 'missed' ? 'maker failed; their bond was paid to you' : m.status });
+      if (m.kind === 'deposit' && m.maker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Withdrawal', value: `−${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? `paid to ${short(m.taker_pay_to, 12)}` : m.status === 'open' ? (m.taker_txid ? 'buyer paid, waiting for a block' : 'a buyer took it, waiting for their payment') : `${m.status}; the balance is yours again` });
+      else if (m.kind === 'deposit' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Bought on chain', value: `+${money(m.maker_amount, m.maker_asset)}`, sub: m.status === 'closed' ? 'done' : m.status === 'open' ? (m.taker_txid ? 'payment seen, waiting for a block' : 'waiting for your payment') : m.status });
       else if (m.kind === 'trade' && m.taker === me()) rows.push({ seq: m.seq, ts: m.claimed_ts, label: 'Swap', value: `${money(m.taker_amount, m.taker_asset)} → ${money(m.maker_amount, m.maker_asset)}`, sub: 'instant' });
     }
     rows.sort((a, b) => b.seq - a.seq);

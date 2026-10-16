@@ -2,8 +2,8 @@
 
 A cross-chain order book with real settlement, finalized on Bitcoin.
 
-- What trades are options: a maker's promise to deliver a coin on its chain, backed by BLRD the maker stakes. Holders send, receive and trade options instantly and for free, and exercise them to take the coin out. Holders never need BLRD.
-- Coins move on chain only for deposits (buy options with the coin) and exercises (the issuer delivers, or loses a share of its stake to the holder). Anyone may deliver in the issuer's place and take that share.
+- Coins come in by being burned: every account has a keyless burn address per chain (`1BoLLARD…` on Bitcoin, `0xb0110a4d…` on Ethereum), and what lands there is minted on Bollard one for one. No custodian, no bridge, no maker promise: the supply here is exactly what was burned there.
+- Holders leave by selling their balance to someone coming in, who pays them on chain. Everything else is instant and free on the ledger.
 - Every account picks a currency. A send to someone who uses another currency converts on the book in the same entry. Every market is quoted in USDC.
 - Accounts are passkeys (P-256) or secp256k1 keys.
 - One leader at a time sequences everything in milliseconds. Bitcoin picks the leader: a fee-weighted lottery run through OP_RETURN entries, which also commit to the log and finalize it.
@@ -34,25 +34,19 @@ The fee is the entry's weight. The block that includes it runs the draw; if you 
 
 ```sh
 bollard keygen
-# stake 10 BLRD; one pool backs everything you issue
-bollard tx --node https://mainnet.bollard.exchange stake --amount 1000000000
-# issue 1 BTC of options
-bollard tx mint --asset btc:BTC --quantity 100000000
-# sell them for on-chain bitcoin (a deposit order); every claim gets its own address from the xpub
-bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 --price 100000000 \
-  --receive-address xpub... --expiry-height 980000
-# or rest them on the ledger against dollars
-bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 --price 9000000000000 --expiry-height 980000
+bollard burn-address --account <pubkey hex>     # where to send coins to bring them in
+# once bitcoin and USDC have landed, rest orders against dollars
+bollard tx --node https://mainnet.bollard.exchange place-order --market btc:BTC/eth:USDC --side sell \
+  --settle 0 --quantity 100000000 --price 9000000000000 --expiry-height 980000
 ```
 
-The website is for holders and takers only: create a passkey, deposit, send, take orders, exercise to withdraw. Making happens here, in the CLI, because a maker must act while nobody has a browser open.
-
-Amounts are in atoms: sats, gwei, 10^-6 USDC, rill (10^-8 BLRD). Prices are quote atoms per 100,000,000 base atoms.
+The website is for holders only: create a passkey, burn in, send, buy and sell, withdraw. Making happens here, in the CLI, because a maker must act while nobody has a browser open.
 
 ## Layout
 
 - `schema/bollard.fbs` — the wire format (FlatBuffers). Signed bytes are canonical.
-- `src/apply.rs` — the state transition; the only code that changes state. `src/ledger.rs` holds the option balances.
+- `src/apply.rs` — the state transition; the only code that changes state. `src/ledger.rs` holds balances.
+- `src/chain/burn.rs` — keyless burn addresses; `src/burn_watch.rs` — the leader's watch on them.
 - `src/lottery.rs`, `src/bitcoin_watch.rs` — entries, the draw, epochs.
 - `src/node.rs` — leader sequencing, follower replay, settlement checks.
 - `src/chain/` — Bitcoin and EVM adapters.

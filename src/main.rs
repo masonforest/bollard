@@ -1,6 +1,7 @@
 mod api;
 mod apply;
 mod bitcoin_watch;
+mod burn_watch;
 mod chain;
 mod client;
 mod config;
@@ -33,6 +34,12 @@ enum Cmd {
     Enter(enter::EnterArgs),
     /// Build, sign and submit a transaction to a node.
     Tx(client::TxArgs),
+    /// Print an account's keyless burn addresses: send coins there to bring them onto Bollard.
+    BurnAddress {
+        /// The account's public key, hex (33 bytes secp256k1 or 65 bytes P-256)
+        #[arg(long)]
+        account: String,
+    },
 }
 
 #[tokio::main]
@@ -45,5 +52,12 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Keygen => client::keygen(),
         Cmd::Enter(args) => enter::enter(args).await,
         Cmd::Tx(args) => client::tx(args).await,
+        Cmd::BurnAddress { account } => {
+            let pk = hex::decode(account)?;
+            anyhow::ensure!(crypto::valid_account(&pk), "not an account key");
+            println!("bitcoin  {}", chain::burn::btc(&pk));
+            println!("ethereum {}", chain::burn::eth(&pk));
+            Ok(())
+        }
     }
 }

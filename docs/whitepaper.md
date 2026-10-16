@@ -4,7 +4,7 @@ October 2026
 
 ## Summary
 
-Bollard is a cross-chain exchange with a real order book, finalized on Bitcoin. What trades on it are options: a maker's staked promise to deliver a coin on its own chain. A maker stakes BLRD, the network token, once, and issues options on coins it holds; every option it issues, on every asset, draws on that one stake. Holders move options between accounts instantly and for free, trade them against each other on the book, and exercise them when they want the real coin, at which point the issuer must deliver on chain or lose a share of its stake to the holder. Nobody custodies anything: no vaults, no wrapped coins, no threshold signatures. A balance on Bollard is a bundle of promises, each one backed by a named maker and a visible stake.
+Bollard is a cross-chain exchange with a real order book, finalized on Bitcoin. Coins come onto it by being burned: every account has a keyless address on each chain, and whatever is sent there is gone from that chain for good and credited on Bollard one for one. The supply on Bollard can never exceed what was burned, there is no custodian, no vault, no bridge contract, no maker promise and nothing to prove. Holders move balances between accounts instantly and for free, trade them against dollars on the book, and leave by selling to someone coming in, who pays them on their chain.
 
 Every account picks a currency. Send someone dollars and they receive dollars; send them dollars when they hold bitcoin and the network converts on the way at the best price on the book, in the same transaction. Accounts are passkeys, so there is nothing to back up and nothing to paste.
 
@@ -12,22 +12,22 @@ One leader at a time sequences transactions in realtime. That leader is chosen b
 
 ## Actors and components
 
-There are five kinds of participant. Only the leader has any power, and only for one Bitcoin block at a time.
+There are four kinds of participant. Only the leader has any power, and only for one Bitcoin block at a time.
 
 | Actor | Does | Gets |
 | --- | --- | --- |
-| Maker (issuer) | Stakes BLRD; issues options on coins it holds; sells them for on-chain payment (a deposit) or on the book; delivers the coin when a holder exercises | The spread; the stake back when it unstakes |
-| Holder (user) | Keeps a balance of options in a chosen currency; sends, receives and trades them instantly; exercises to take the coin out; needs no BLRD | The coin on exercise, or a share of the issuer's stake if the issuer fails to deliver |
+| Holder | Burns coins to come in; keeps a balance in a chosen currency; sends, receives and trades instantly; leaves by selling to an entrant who pays on chain; needs no BLRD | Instant, free money that is exactly as scarce as what was burned |
+| Maker | Rests orders on the book against dollars, from a program, so the book is deep while nobody is looking at a browser | The spread |
 | Node (follower) | Replays the leader's log, watches external chains, serves reads | Nothing directly; runs one to verify and to be eligible to lead |
-| Leader | The node whose lottery entry won the current Bitcoin block; sequences every transaction in realtime, asserts external confirmations, mints its reward | The block's BLRD issuance plus all fees in that epoch |
+| Leader | The node whose lottery entry won the current Bitcoin block; sequences every transaction in realtime, asserts burns and payments it sees on the chains, mints its reward | The block's BLRD issuance plus all fees in that epoch |
 | Bitcoin miner | Mines blocks as usual; may include its own lottery entry and pay the entry fee to itself | Leadership of the block it mines, at no cost |
-| External chains | The chains the supported assets live on carry the actual payments; the network only watches them | Ordinary transaction fees |
+| External chains | The chains the supported assets live on carry burns and exit payments; the network only watches them | Ordinary transaction fees |
 
-Two interfaces are meant for people: a wallet for holders and takers, and a command line for makers. A maker has to deliver on exercises and keep orders fresh while nobody is looking at a browser, so making is a program's job, never a web page's.
+Two interfaces are meant for people: a wallet for holders, and a command line for makers. A maker has to keep orders fresh while nobody is looking at a browser, so making is a program's job, never a web page's.
 
-Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, balances, issuers, orders, matches), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.
+Components inside one node: a Bitcoin node (blocks, entries, broadcasting entries), the log (append-only, hash-chained, leader-signed), the state (accounts, balances, burns, orders, matches), one chain adapter per supported chain, and two interfaces: one for users, and one that streams the log to followers.
 
-Bitcoin picks the leader and finalizes its log, coins move on the external chains only when options are bought with them or exercised, and the nodes sequence and watch without ever holding coins.
+Bitcoin picks the leader and finalizes its log, coins move on the external chains only when they are burned to come in or paid to someone leaving, and the nodes sequence and watch without ever holding coins.
 
 ## The Bitcoin lottery
 
@@ -99,8 +99,8 @@ The leader is a sequencer: it takes signed transactions over the network, orders
 
 ### Kinds
 
-- User-signed: Transfer, Stake, Unstake, Mint, Burn, Send, SetCurrency, PlaceOrder, CancelOrder, Claim, ReportPayment, Exercise.
-- Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (returns or slashes the reserved stake), Handoff (reason, replaced leader).
+- User-signed: Transfer, Send, SetCurrency, PlaceOrder, CancelOrder, Claim, ReportPayment.
+- Leader-asserted: EpochStart (height, entry txid; mints the reward), Minted (account, asset, amount, txid, block hash, height), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), Handoff (reason, replaced leader).
 
 Rule: every leader-asserted entry must be checkable by any node from Bitcoin, the external chains and prior state. A follower that finds one false treats the log as invalid from that entry on.
 
@@ -135,43 +135,32 @@ An account is a public key. Two kinds are accepted: a secp256k1 key, which is al
 
 Each account has a currency: the asset it holds its balance in and wants to be paid in. The default is dollars. SetCurrency changes it.
 
-## Options
+## Burning in
 
-A balance on Bollard is not a coin. It is a quantity of options on a coin, each issued by a maker who holds the real coin off the ledger and has staked BLRD. The ledger tracks, for every account, how much of each asset it holds and from which issuer. Options from different issuers on the same asset are fungible for sending and trading; they differ only in who stands behind them, and the interface shows that.
+Every account has a burn address on every supported chain, derived from its public key. Nobody holds the key: the address is a hash of the account key with a readable prefix, and its checksum is computed rather than found. On Bitcoin it is a legacy address beginning `1BoLLARD`; legacy costs a sender three vbytes more than bech32, and since nobody ever spends from it the readable prefix is nearly free. On Ethereum it begins `0xb0110a4d`, which is "bollard" in hex.
 
-### Staking and issuing
+Whatever is sent to a burn address is gone from its chain for good. The leader watches every account's burn addresses and appends a Minted entry for each payment it sees: after one confirmation on Bitcoin, and once the block is finalized on Ethereum, so a mint can never be reorged away. Every follower checks the entry against its own chain node, exactly as it checks a settlement leg, and a false Minted invalidates the log from that entry on. The account is credited one for one, in the chain's own unit. There is no claim, no memo and no counterparty: the burn is the deposit.
 
-A maker's stake is one pool. It is not split per asset or per order: everything the maker has issued, on every chain, draws on the same BLRD, and every default is paid out of it. That keeps the maker's capital in one place and gives holders one number to look at.
+Because the only way to create a balance is to destroy the same amount on the chain it came from, the supply on Bollard is exactly the supply that was burned. That is the whole backing, and it is visible to anyone who can read a block.
 
-| Transaction | Effect |
-| --- | --- |
-| Stake(amount) | Moves BLRD from the maker's balance into its stake. |
-| Unstake(amount) | Asks for BLRD back. It returns to the balance 144 blocks later, and until then it still backs the maker's options and can still be slashed. |
-| Mint(asset, quantity) | Creates `quantity` options on `asset` in the issuer's own balance. Requires a stake. |
-| Burn(asset, quantity) | Destroys options the issuer holds. |
+## Leaving
 
-There is no price oracle, so the protocol cannot judge whether a stake is enough. The stake and the amounts issued against it are public, the interface prices them from the network's own BLRD markets, and holders see them before they accept an issuer's options. An issuer that issues more than its stake can bear finds its options discounted on the book or refused. That is the whole enforcement, and it is the same enforcement a bank faces.
+Burned coins do not come back. A holder leaves by selling to someone coming in: an order to sell a balance, paid on chain. The holder names the address to be paid at; a taker claims the order, pays that address on the chain, and once the payment is in a block the ledger hands the taker the balance. Until a taker claims, the holder can cancel.
 
-### Moving
-
-Send(to, asset, amount) moves options from one account to another in one log entry, sequenced in milliseconds. No chain is touched and no fee is charged. If the recipient's currency differs from the asset sent, the same entry converts: the network takes the best resting orders that turn the sent asset into dollars and then dollars into the recipient's currency (one hop when either side is dollars), fills them atomically, and credits the recipient with the result. If the book cannot convert the whole amount, the send fails and nothing moves. The sender always pays what they typed; the recipient always receives their own currency.
-
-### Exercising
-
-Exercise(asset, quantity, receive address) burns options the holder has and opens a delivery match against their issuer, oldest issuer first. The issuer must pay the coin to the holder's address on its chain by the maker deadline. These options' share of the issuer's stake, in proportion to everything the issuer has issued on that asset, is reserved on the match: returned to the pool when the issuer delivers, paid to whoever else delivers, or paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.
+This is a market, and it prices itself. Anyone can create a balance at exactly one by burning, so a balance can never be worth more than the coin; it trades at whatever discount reflects how long sellers expect to wait for a buyer. Most people never leave: they hold dollars as dollars, pay each other, and let the balance circulate.
 
 ## Order book and matching
 
 The book lives in the log, and every node rebuilds it from there. Makers rest orders; takers claim them. An order says how it settles:
 
-- On the ledger. Both sides are options already on Bollard. The maker's side is escrowed at placement, the taker's side is debited at claim, and the fill is one atomic log entry. This is how options trade against each other, and how a send converts currencies.
-- On chain (a deposit). The maker sells options for the real coin. The taker claims, pays the maker on the coin's chain, and the escrowed options are released to the taker when the payment is in a block. This is how coins come in.
+- On the ledger. Both sides are balances already on Bollard. The maker's side is escrowed at placement, the taker's side is debited at claim, and the fill is one atomic log entry. This is how balances trade against dollars, and how a send converts currencies.
+- On chain (an exit). The seller offers a balance for the real coin. The taker claims, pays the seller on the coin's chain, and the escrowed balance is released to the taker when the payment is in a block. This is how holders leave.
 
 ### Assets and markets
 
 - An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.
 - Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote.
-- Every ledger market is quoted in dollars: USDC on Ethereum is the quote, and each other asset is a base against it. One market per asset keeps the book deep and the prices plain. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.
+- Every ledger market is quoted in dollars: USDC on Ethereum is the quote, and each other asset is a base against it. One market per asset keeps the book deep and the prices plain. An exit market has the same asset on both sides: a balance, paid for with the coin itself on its chain.
 
 ### Resting order (maker)
 
@@ -185,7 +174,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest or
 | receive address | on-chain orders only: where the maker is paid: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo |
 | expiry | a Bitcoin height; the order cancels itself there |
 
-A sell order escrows the base (options, or BLRD) at placement; a ledger buy order escrows the quote. Escrow is what backs a resting order, so there is no separate bond.
+A sell order escrows the base at placement; a ledger buy order escrows the quote. Escrow is what backs a resting order, so there is no bond.
 
 ### Claim (taker)
 
@@ -203,46 +192,31 @@ A sell order escrows the base (options, or BLRD) at placement; a ledger buy orde
 5. Dust: each adapter sets a minimum quantity for its asset.
 6. One payment, one match. A transaction id can satisfy only one leg on the whole ledger, and the per-claim addresses above are what make that safe in practice.
 
-## Settlement and stake
+## Settlement
 
-Coins move on chain in exactly two cases: a deposit, where a taker pays a maker for options, and an exercise, where a maker pays a holder for options burned. In a deposit the taker pays first and risks nothing but the claim. In an exercise the maker pays and the reserved share of its stake is the bond.
+Coins move on chain in exactly two cases: a burn, where someone comes in, and an exit, where a taker pays a seller for a balance. Neither needs a bond, because in both the person paying is the person who wants something: the burner wants a balance and the taker wants the seller's balance. Nobody is ever owed a delivery.
 
-### Deposit
+### Exit
 
-1. Claim. The taker claims an on-chain order. The claim is sequenced in milliseconds and the options are held in escrow for the taker. The taker has 3 minutes of leader time to post a payment txid, or the claim expires and the order reopens.
-2. Taker pays. The taker sends the coin to the address derived for this claim and posts ReportPayment(match, txid). Wallets find the payment on the chain themselves; nobody has to paste anything.
-3. Included. Every node watches the chain for the payment to land in a block. The leader appends LegIncluded(leg, txid, block hash, height), the escrowed options go to the taker, and the match closes. If the payment is not in a block by the taker deadline, counted in Bitcoin blocks from the claim, the claim is void and the order reopens. If a reorg later removes it, the options are already spent; the maker's own chain policy is what protects it, and a deposit order can ask for a claim bond.
-
-### Exercise
-
-1. Exercise. The holder's options are burned and a delivery match opens against the issuer, with these options' share of the issuer's stake reserved as the bond.
-2. Maker pays. The issuer sends the coin to the holder's address and posts ReportPayment. The maker deadline is counted in Bitcoin blocks from the exercise.
-3. Anyone may pay. The bond is released to whoever's payment satisfied the leg. If the issuer is slow or gone, a third party can deliver and take the bond. That is the repo.
-4. Included and deep. The bond is released only once the payment is deep (the depth each chain's adapter sets, at or beyond that chain's own finality), so an issuer cannot profit from a reorg of its own payment.
-5. MatchClosed. The bond, minus the match fee, goes back into the issuer's stake if the issuer delivered, or to the third party who did.
+1. Claim. The taker claims an on-chain order. The claim is sequenced in milliseconds and the balance is held in escrow for the taker. The taker has 3 minutes of leader time to post a payment txid, or the claim expires and the order reopens.
+2. Taker pays. The taker sends the coin to the seller's address and posts ReportPayment(match, txid). Wallets find the payment on the chain themselves; nobody has to paste anything.
+3. Included. Every node watches the chain for the payment to land in a block. The leader appends LegIncluded(leg, txid, block hash, height), the escrowed balance goes to the taker, and the match closes. If the payment is not in a block by the taker deadline, counted in Bitcoin blocks from the claim, the claim is void and the order reopens. The seller has the coins on their own chain and takes the reorg risk of that chain, like any recipient.
 
 ### Outcomes
 
 | What happened | Result |
 | --- | --- |
-| Deposit: taker never posts a txid | Claim expires after 3 minutes; order reopens; any claim bond goes to the maker |
-| Deposit: payment not in a block by the taker deadline | Claim void; order reopens; any claim bond goes to the maker |
-| Deposit: payment in a block | Options released to the taker; match closed |
-| Exercise: delivery not deep by the maker deadline plus 2 blocks of grace | The reserved stake goes to the holder in full |
-| Exercise: delivery reorged out before it is deep | Counts as not delivered; same as the row above |
-| Exercise: delivery deep | Reserved stake, minus the fee, back to the issuer's pool, or to whoever else delivered; match closed |
+| Taker never posts a txid | Claim expires after 3 minutes; order reopens; any claim bond goes to the seller |
+| Payment not in a block by the taker deadline | Claim void; order reopens; any claim bond goes to the seller |
+| Payment in a block | Balance released to the taker; match closed |
 
 ### Speed
 
-Everything that stays on the ledger is done in the time it takes the leader to sign: sends, conversions, trades between options. A deposit takes one block on the coin's chain. An exercise takes however long the issuer takes to pay plus the chain's own finality, and the deadline is the backstop. Most people never exercise: they hold dollars as dollars, pay each other, and let the makers keep the coins.
-
-### Stake sizing
-
-The stake is set by the issuer, in BLRD, and it backs everything the issuer has issued. A stake equal to the value issued means a defaulting issuer loses exactly what it owed. A premium removes the issuer's free option when BLRD falls against the coins, and makes it worth a third party's while to deliver in the issuer's place. Either is the issuer's choice in v1; the stake and the issuance are public and the market prices them.
+Everything that stays on the ledger is done in the time it takes the leader to sign: sends, conversions, trades. Coming in takes one confirmation on Bitcoin or finality on Ethereum. Leaving takes however long a buyer takes to arrive plus one block of their payment. Most people never leave.
 
 ## Token economics
 
-BLRD has three jobs: back options (stake), pay for sequencing (fees to the leader), and reward leaders (issuance). It is never needed to hold, move or trade the external assets.
+BLRD has two jobs: pay for sequencing (fees to the leader) and reward leaders (issuance). It is never needed to hold, move or trade the external assets, and it is itself a balance like any other: burn-minted assets and BLRD trade on the same book.
 
 ### Issuance
 
@@ -254,18 +228,17 @@ Flat, in BLRD, paid to the leader of the epoch the entry lands in. Flat fees nee
 
 | Action | Fee |
 | --- | --- |
-| Send, Transfer, SetCurrency, Stake, Unstake, Mint, Burn, PlaceOrder, CancelOrder, Claim, ReportPayment | 0 |
-| Exercise | 0.001 BLRD, paid by the issuer out of the reserved stake at MatchClosed |
+| Send, Transfer, SetCurrency, PlaceOrder, CancelOrder, Claim, ReportPayment | 0 |
 
-Using the ledger is free, so the book stays deep and holders never need BLRD. The issuer pays a little per exercise; that is the price of sequencing. Spam is handled by a per-account rate limit, not by a fee. Fees are fixed per software version.
+Using the ledger is free, so the book stays deep and holders never need BLRD. Spam is handled by a per-account rate limit, not by a fee. Fees are fixed per software version; a sequencing fee on trades is the obvious place to turn one on later.
 
 ### Burns
 
-Nothing burns in v1. Every slashed stake goes to the party who was owed.
+BLRD never burns. The external coins burn on the way in; that is the point.
 
 ### How a newcomer gets BLRD
 
-Holders never need BLRD, so most people never buy it. A maker buys it on a BLRD market like any other option trade, or by deposit. Leaders receive all new BLRD, so they are the natural first sellers. No faucet, no airdrop, no presale.
+Holders never need BLRD, so most people never buy it. It trades against dollars on the book like everything else. Leaders receive all new BLRD, so they are the natural first sellers. No faucet, no airdrop, no presale.
 
 ## Nodes
 
@@ -296,12 +269,11 @@ The worst a leader can do is waste one Bitcoin block. It cannot take coins, beca
 | Miner elects itself | One epoch of leadership per block mined | Intended; that is the opt-in path for miners |
 | Sybil entries | None | Weight is the fee; splitting a fee across entries changes nothing |
 | Bitcoin reorg | Replaced blocks' epochs are recomputed | Users wait the depth they want, as on Bitcoin |
-| Issuer never delivers on exercise | Holder is out the coin | The reserved share of the issuer's stake goes to the holder in full; anyone may deliver in the issuer's place and take it |
-| Thin stake | An issuer defaults when the price moves against it | Stake and issuance are public and priced by the market; a premium makes third-party delivery worthwhile; a protocol minimum from the internal BLRD markets later |
-| Issuer over-issues | The stake is spread thinner than holders expected | The stake is one pool and each exercise takes its pro-rata share, so every holder sees the same ratio; options from a thin issuer trade at a discount or are refused |
-| Issuer unstakes ahead of a default | Holders find the pool empty | Unstaking waits 144 blocks and stays slashable meanwhile, longer than any maker deadline plus grace |
-| Claim a deposit and never pay (griefing) | A maker's order is locked for 3 minutes | Claim expires and the order reopens; a maker-set claim bond goes to the maker; per-account rate limit |
-| Deposit payment reorged out after inclusion | The taker keeps options it did not pay for | Deposit makers set their chain's depth and a claim bond; small by construction since options are released only at inclusion |
+| Leader asserts a false Minted | A balance appears from nothing | Every follower verifies the burn against its own chain node; the log is invalid from that entry on, and later winners that build on it are skipped |
+| Burn reorged out after minting | A balance with no burn behind it | Bitcoin burns mint after a confirmation and Ethereum burns only from finalized blocks; a deeper Bitcoin reorg is treated like any other Bitcoin reorg |
+| Claim an exit and never pay (griefing) | A seller's order is locked for 3 minutes | Claim expires and the order reopens; a seller-set claim bond goes to the seller; per-account rate limit |
+| Exit payment reorged out after inclusion | The taker keeps a balance it did not pay for | Sellers choose their chain's depth and may ask a claim bond; small by construction since the balance is released only at inclusion |
+| Nobody wants in | Holders cannot leave at par | The balance trades at a discount until entrants return; the same as any one-way bridge, and said plainly in the wallet |
 | Unreachable or DoS'd leader | Stall of up to 30 s | Failover to the next ranked entry, then the previous leader; the leader's IP is public by design, so run it like any public server |
 | Lost passkey | The account is unreachable | Passkeys sync through the platform's store; a second passkey on the same account is a v2 option |
 
@@ -315,14 +287,12 @@ Starting values for v1; all fixed per software version.
 | Entry payload | 75 bytes, magic `BLRD`, version 1 | Under the 80-byte OP\_RETURN default of older Bitcoin Core versions |
 | Entry weight | fee in satoshis | Pays miners, no burn address |
 | Leader timeout | 30 s unreachable | Failover to the next ranked entry |
-| Claim window | 3 minutes of leader time | Enough to broadcast a deposit payment; a dead claim costs the maker little |
-| Deep (stake release) | per chain, set by its adapter, at or beyond the chain's own finality (3 confirmations on Bitcoin) | Gates only the return of reserved stake on exercise; nobody else waits for it |
-| Taker deadline | per chain, set by its adapter; counted in Bitcoin blocks from a deposit claim | Payment in a block by then, or the claim is void |
-| Maker deadline | per chain, set by its adapter; counted in Bitcoin blocks from an exercise | Then the reserved stake goes to the holder |
-| Unstake delay | 144 blocks | Stake cannot leave ahead of a default it should pay for |
+| Claim window | 3 minutes of leader time | Enough to broadcast an exit payment; a dead claim costs the seller little |
+| Taker deadline | per chain, set by its adapter; counted in Bitcoin blocks from an exit claim | Payment in a block by then, or the claim is void |
+| Mint depth | 1 confirmation on Bitcoin; finalized block on Ethereum | A mint can never be reorged away |
+| Burn prefixes | `1BoLLARD` on Bitcoin, `0xb0110a4d` on Ethereum | Readable, keyless, and nearly free since burn addresses are never spent from |
 | Grace G | 2 blocks | One censoring leader cannot cause a default |
 | Issuance | Bitcoin subsidy at that height, in BLRD (3.125 now) | Known curve, no debate |
-| Exercise fee | 0.001 BLRD, paid by the issuer out of reserved stake | Sequencing has a price; holders pay nothing |
 | Ledger fees | 0 | Sends, trades and conversions are free |
 | Account keys | secp256k1 (33 bytes) or P-256 passkey (65 bytes) | Nodes use the first; people use the second |
 | Default currency | USD (USDC on Ethereum) | What most people mean by money |

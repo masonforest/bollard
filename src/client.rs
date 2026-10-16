@@ -65,30 +65,6 @@ pub enum TxCmd {
         #[arg(long, default_value = "ledger")]
         settle: String,
     },
-    /// Issue options on an asset you will deliver on demand; your stake backs them
-    Mint {
-        #[arg(long)]
-        asset: String,
-        #[arg(long)]
-        quantity: u64,
-    },
-    /// Stake BLRD (rill): one pool that backs every option you issue
-    Stake {
-        #[arg(long)]
-        amount: u64,
-    },
-    /// Ask for staked BLRD back; it returns after the unstake delay and is slashable until then
-    Unstake {
-        #[arg(long)]
-        amount: u64,
-    },
-    /// Destroy options you issued and hold
-    Burn {
-        #[arg(long)]
-        asset: String,
-        #[arg(long)]
-        quantity: u64,
-    },
     /// Send BLRD or options to an account; the ledger converts to their currency
     Send {
         #[arg(long)]
@@ -97,15 +73,6 @@ pub enum TxCmd {
         asset: String,
         #[arg(long)]
         amount: u64,
-    },
-    /// Burn options and have the real asset delivered to an address
-    Exercise {
-        #[arg(long)]
-        asset: String,
-        #[arg(long)]
-        quantity: u64,
-        #[arg(long)]
-        receive_address: String,
     },
     /// The currency you want to receive in
     SetCurrency {
@@ -198,12 +165,7 @@ pub async fn tx(a: TxArgs) -> Result<()> {
                 _ => bail!("settle must be ledger or chain"),
             },
         },
-        TxCmd::Mint { asset, quantity } => TxBody::Mint { asset, quantity },
-        TxCmd::Stake { amount } => TxBody::Stake { amount },
-        TxCmd::Unstake { amount } => TxBody::Unstake { amount },
-        TxCmd::Burn { asset, quantity } => TxBody::Burn { asset, quantity },
         TxCmd::Send { to, asset, amount } => TxBody::Send { to: hex::decode(to)?, asset, amount },
-        TxCmd::Exercise { asset, quantity, receive_address } => TxBody::Exercise { asset, quantity, receive_address },
         TxCmd::SetCurrency { asset } => TxBody::SetCurrency { asset },
         TxCmd::Cancel { order } => TxBody::CancelOrder { order_id: hex::decode(order)? },
         TxCmd::Claim { order, quantity, receive_address } => TxBody::Claim { order_id: hex::decode(order)?, quantity, receive_address },

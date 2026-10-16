@@ -9,7 +9,7 @@
 //! when options are bought with an on-chain payment (a deposit) or exercised
 //! (a withdrawal).
 
-use crate::chain::{self, chain_params, GRACE_BLOCKS};
+use crate::chain::{self, chain_params};
 use crate::fbio::{Body, ParsedEntry, TxBody};
 use crate::ledger;
 use anyhow::{anyhow, bail, Result};
@@ -18,10 +18,8 @@ use sqlx::PgConnection;
 
 pub const PRICE_SCALE: u128 = 100_000_000;
 pub const TRANSFER_FEE: u64 = 0;
-pub const MATCH_FEE: u64 = 100_000; // 0.001 BLRD, taken from an exercised issuer's bond
+pub const MATCH_FEE: u64 = 0;
 pub const CLAIM_WINDOW_MS: u64 = 180_000;
-/// Blocks between asking to unstake and getting the BLRD back; the stake stays slashable meanwhile.
-pub const UNSTAKE_DELAY: u32 = 144;
 pub const BLRD: &str = "BLRD";
 
 pub fn subsidy(height: u32) -> u64 {
@@ -64,33 +62,6 @@ async fn debit(c: &mut PgConnection, pk: &[u8], amount: i64) -> Result<()> {
     }
     sqlx::query("update accounts set balance = balance - $2 where pubkey = $1").bind(pk).bind(amount).execute(c).await?;
     Ok(())
-}
-
-async fn account_full(c: &mut PgConnection, pk: &[u8]) -> Result<(i64, i64, i64, i64, i64, i32)> {
-    account(c, pk).await?;
-    let r: (i64, i64, i64, i64, i64, i32) = sqlx::query_as("select nonce, balance, locked, staked, unstaking, unstake_height from accounts where pubkey = $1").bind(pk).fetch_one(c).await?;
-    Ok(r)
-}
-
-/// Stake that still backs the maker's options: what is staked plus what is waiting to unstake.
-async fn stake_total(c: &mut PgConnection, pk: &[u8]) -> Result<i64> {
-    let (_, _, _, staked, unstaking, _) = account_full(c, pk).await?;
-    Ok(staked + unstaking)
-}
-
-/// Take `quantity` options' share of the issuer's stake out of the pool and
-/// return it; it is held on the exercise match until delivery or default.
-async fn reserve_stake(c: &mut PgConnection, issuer: &[u8], issued: i64, quantity: i64) -> Result<i64> {
-    let (_, _, _, staked, unstaking, _) = account_full(c, issuer).await?;
-    let total = staked + unstaking;
-    if issued <= 0 || total <= 0 {
-        return Ok(0);
-    }
-    let bond = ((total as i128 * quantity as i128) / issued as i128).min(total as i128) as i64;
-    let from_staked = bond.min(staked);
-    let from_unstaking = bond - from_staked;
-    sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(issuer).bind(from_staked).bind(from_unstaking).execute(c).await?;
-    Ok(bond)
 }
 
 /// Move `amount` from balance to locked, failing if the balance is short.
@@ -317,8 +288,6 @@ async fn swap_pair(c: &mut PgConnection, e: &ParsedEntry, payer: &[u8], from_ass
 pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> {
     let seq = e.seq;
     let mut events = Vec::new();
-    // Unstakes mature at their height, whatever entry brings it.
-    sqlx::query("update accounts set balance = balance + unstaking, unstaking = 0 where unstaking > 0 and unstake_height <= $1").bind(e.height as i32).execute(&mut *c).await?;
     // Orders cancel themselves at their expiry height, whatever entry brings that height.
     let expired: Vec<Vec<u8>> = sqlx::query_scalar("select id from orders where status = 'open' and expiry_height <= $1").bind(e.height as i32).fetch_all(&mut *c).await?;
     for id in expired {
@@ -369,63 +338,6 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     events.push(ev("SetCurrency", json!({"account": hex::encode(&acct), "asset": asset})));
                 }
 
-                TxBody::Mint { asset, quantity } => {
-                    let a = ledger::ensure_asset(asset)?;
-                    if a.chain == "blrd" {
-                        bail!("BLRD cannot be minted");
-                    }
-                    if *quantity == 0 {
-                        bail!("quantity must be positive");
-                    }
-                    if stake_total(c, &acct).await? == 0 {
-                        bail!("stake BLRD before issuing options");
-                    }
-                    let issued = ledger::issued(c, &acct, asset).await?;
-                    ledger::set_issued(c, &acct, asset, issued + i(*quantity)?).await?;
-                    ledger::credit(c, &acct, asset, &acct, i(*quantity)?).await?;
-                    events.push(ev("Mint", json!({"issuer": hex::encode(&acct), "asset": asset, "quantity": quantity})));
-                }
-
-                TxBody::Stake { amount } => {
-                    let amt = i(*amount)?;
-                    if amt <= 0 {
-                        bail!("amount must be positive");
-                    }
-                    debit(c, &acct, amt).await?;
-                    sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&acct).bind(amt).execute(&mut *c).await?;
-                    events.push(ev("Stake", json!({"account": hex::encode(&acct), "amount": amount})));
-                }
-
-                TxBody::Unstake { amount } => {
-                    let amt = i(*amount)?;
-                    let (_, _, _, staked, _, _) = account_full(c, &acct).await?;
-                    if amt <= 0 || amt > staked {
-                        bail!("you have {staked} rill staked");
-                    }
-                    // Joins any amount already waiting; the clock restarts for all of it.
-                    sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking + $2, unstake_height = $3 where pubkey = $1")
-                        .bind(&acct)
-                        .bind(amt)
-                        .bind((e.height + UNSTAKE_DELAY) as i32)
-                        .execute(&mut *c)
-                        .await?;
-                    events.push(ev("Unstake", json!({"account": hex::encode(&acct), "amount": amount, "release_height": e.height + UNSTAKE_DELAY})));
-                }
-
-                TxBody::Burn { asset, quantity } => {
-                    ledger::ensure_asset(asset)?;
-                    let q = i(*quantity)?;
-                    let own: Option<i64> = sqlx::query_scalar("select amount from balances where account = $1 and asset = $2 and issuer = $1").bind(&acct).bind(asset).fetch_optional(&mut *c).await?;
-                    if own.unwrap_or(0) < q {
-                        bail!("you hold only {} of your own {asset} options", own.unwrap_or(0));
-                    }
-                    sqlx::query("update balances set amount = amount - $3 where account = $1 and asset = $2 and issuer = $1").bind(&acct).bind(asset).bind(q).execute(&mut *c).await?;
-                    sqlx::query("delete from balances where account = $1 and asset = $2 and amount = 0").bind(&acct).bind(asset).execute(&mut *c).await?;
-                    let issued = ledger::issued(c, &acct, asset).await?;
-                    ledger::set_issued(c, &acct, asset, issued - q).await?;
-                    events.push(ev("Burn", json!({"issuer": hex::encode(&acct), "asset": asset, "quantity": quantity})));
-                }
-
                 TxBody::Send { to, asset, amount } => {
                     if !crate::crypto::valid_account(to) {
                         bail!("recipient must be a public key");
@@ -448,44 +360,6 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                             record_transfer(c, e, &acct, to, asset, amt, asset, amt).await?;
                             events.push(ev("Send", json!({"from": hex::encode(&acct), "to": hex::encode(to), "asset": asset, "amount": amount, "delivered_asset": asset, "delivered": amount})));
                         }
-                    }
-                }
-
-                TxBody::Exercise { asset, quantity, receive_address } => {
-                    let a = ledger::ensure_asset(asset)?;
-                    if a.chain == "blrd" {
-                        bail!("BLRD is not an option");
-                    }
-                    if *quantity < a.min_quantity {
-                        bail!("quantity below the minimum of {} {}", a.min_quantity, a.id);
-                    }
-                    if receive_address.is_empty() {
-                        bail!("receive_address is required");
-                    }
-                    let lots = ledger::debit(c, &acct, asset, i(*quantity)?).await?;
-                    for (n, (issuer, q)) in lots.iter().enumerate() {
-                        // The issuer's whole stake backs everything it has issued; these options take their share of it.
-                        let issued = ledger::issued(c, issuer, asset).await?;
-                        let bond = reserve_stake(c, issuer, issued, *q).await?;
-                        ledger::set_issued(c, issuer, asset, issued - q).await?;
-                        let mut idb = e.hash.to_vec();
-                        idb.extend_from_slice(&(n as u32).to_be_bytes());
-                        let id = crate::crypto::sha256(&idb).to_vec();
-                        sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise')")
-                            .bind(&id)
-                            .bind(seq as i64)
-                            .bind(issuer)
-                            .bind(&acct)
-                            .bind(asset)
-                            .bind(*q)
-                            .bind(bond)
-                            .bind(a.chain)
-                            .bind(receive_address)
-                            .bind(e.time as i64)
-                            .bind(e.height as i32)
-                            .execute(&mut *c)
-                            .await?;
-                        events.push(ev("Exercise", json!({"match": hex::encode(&id), "account": hex::encode(&acct), "issuer": hex::encode(issuer), "asset": asset, "quantity": q, "bond": bond, "to": receive_address})));
                     }
                 }
 
@@ -653,16 +527,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                             }
                             sqlx::query("update matches set taker_txid = $2 where id = $1").bind(&m.id).bind(txid).execute(&mut *c).await?;
                         }
-                        1 => {
-                            if m.kind != "exercise" {
-                                bail!("this match has no on-chain maker leg");
-                            }
-                            if m.maker_txid.is_some() {
-                                bail!("delivery already reported");
-                            }
-                            sqlx::query("update matches set maker_txid = $2, maker_payer = $3 where id = $1").bind(&m.id).bind(txid).bind(&acct).execute(&mut *c).await?;
-                        }
-                        _ => bail!("leg must be 0 (taker) or 1 (maker)"),
+                        _ => bail!("only the taker's leg (0) is paid on chain"),
                     }
                     events.push(ev("PaymentReported", json!({"match": hex::encode(&m.id), "leg": leg, "txid": txid})));
                 }
@@ -714,21 +579,6 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     close_match(c, &m.id, "closed", "deposit credited", seq).await?;
                     events.push(ev("MatchClosed", json!({"match": hex::encode(&m.id), "taker": hex::encode(&m.taker), "asset": m.maker_asset, "quantity": m.quantity})));
                 }
-                1 => {
-                    if m.kind != "exercise" || m.maker_txid.as_deref() != Some(txid.as_str()) {
-                        bail!("txid does not match the reported delivery");
-                    }
-                    if m.maker_included_height.is_some() {
-                        bail!("delivery already included");
-                    }
-                    sqlx::query("update matches set maker_block_hash = $2, maker_block_height = $3, maker_included_height = $4 where id = $1")
-                        .bind(&m.id)
-                        .bind(block_hash)
-                        .bind(*block_height as i64)
-                        .bind(e.height as i32)
-                        .execute(&mut *c)
-                        .await?;
-                }
                 _ => bail!("bad leg"),
             }
             events.push(ev("LegIncluded", json!({"match": hex::encode(&m.id), "leg": leg, "txid": txid})));
@@ -762,44 +612,40 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
             events.push(ev("ClaimVoid", json!({"match": hex::encode(&m.id), "order": hex::encode(&m.order_id), "reason": why})));
         }
 
-        Body::LegMissed { match_id, leg } => {
-            let m = get_match(c, match_id).await?;
-            if *leg != 1 || m.kind != "exercise" {
-                bail!("only an exercise delivery can be missed");
-            }
-            if m.status != "open" {
-                bail!("match is {}", m.status);
-            }
-            let Some(inc) = m.taker_included_height else { bail!("not exercised") };
-            let deadline = inc as u32 + chain_params(&m.maker_chain).maker_deadline + GRACE_BLOCKS;
-            if e.height < deadline {
-                bail!("delivery deadline {deadline} has not passed");
-            }
-            // The issuer's share of stake for these options goes to the exerciser.
-            credit(c, &m.taker, m.bond).await?;
-            close_match(c, &m.id, "missed", "issuer did not deliver", seq).await?;
-            events.push(ev("LegMissed", json!({"match": hex::encode(&m.id), "bond_to_exerciser": m.bond})));
+        Body::LegMissed { .. } | Body::MatchClosed { .. } => {
+            bail!("there are no maker legs any more");
         }
 
-        Body::MatchClosed { match_id } => {
-            let m = get_match(c, match_id).await?;
-            if m.status != "open" || m.kind != "exercise" {
-                bail!("match is {}", m.status);
+        Body::Minted { account, asset, amount, txid, block_hash, block_height } => {
+            let a = ledger::ensure_asset(asset)?;
+            if a.chain == "blrd" {
+                bail!("BLRD is not minted by burning");
             }
-            if m.maker_included_height.is_none() {
-                bail!("delivery not included");
+            if !crate::crypto::valid_account(account) {
+                bail!("bad account");
             }
-            let payer = m.maker_payer.clone().unwrap_or_else(|| m.maker.clone());
-            let fee = i(MATCH_FEE)?.min(m.bond);
-            if payer == m.maker {
-                // Delivered: the stake goes back into the pool.
-                sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&m.maker).bind(m.bond - fee).execute(&mut *c).await?;
-            } else {
-                credit(c, &payer, m.bond - fee).await?;
+            let amt = i(*amount)?;
+            if amt <= 0 {
+                bail!("amount must be positive");
             }
-            credit(c, &e.leader, fee).await?;
-            close_match(c, &m.id, "closed", "delivered", seq).await?;
-            events.push(ev("MatchClosed", json!({"match": hex::encode(&m.id), "bond_to": hex::encode(&payer), "fee": fee})));
+            let dup: Option<i64> = sqlx::query_scalar("select amount from burns where txid = $1 and asset = $2").bind(txid).bind(asset).fetch_optional(&mut *c).await?;
+            if dup.is_some() {
+                bail!("burn {txid} already minted");
+            }
+            sqlx::query("insert into burns (txid, asset, account, amount, block_hash, block_height, seq, ts) values ($1,$2,$3,$4,$5,$6,$7,$8)")
+                .bind(txid)
+                .bind(asset)
+                .bind(account)
+                .bind(amt)
+                .bind(block_hash)
+                .bind(*block_height as i64)
+                .bind(seq as i64)
+                .bind(e.time as i64)
+                .execute(&mut *c)
+                .await?;
+            self::account(c, account).await?;
+            ledger::credit(c, account, asset, ledger::NO_ISSUER, amt).await?;
+            events.push(ev("Minted", json!({"account": hex::encode(account), "asset": asset, "amount": amount, "txid": txid})));
         }
 
         Body::Handoff { reason, replaced } => {
@@ -811,7 +657,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
 
 /// Wipe derived state so the log can be replayed.
 pub async fn reset_state(c: &mut PgConnection) -> Result<()> {
-    sqlx::query("truncate accounts, orders, matches, balances, issuers, transfers").execute(&mut *c).await?;
+    sqlx::query("truncate accounts, orders, matches, balances, transfers, burns").execute(&mut *c).await?;
     sqlx::query("update epochs set leader_key = null, first_seq = null, last_seq = null").execute(c).await?;
     Ok(())
 }
