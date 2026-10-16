@@ -22,6 +22,16 @@
 @media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #111; --muted: #777; --line: #2a2a2a; --accent: #6ea0ff; --on-accent: #06152b; --ok: #22c55e; } }
 * { box-sizing: border-box; }
 .hidden { display: none !important; }
+.coin { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; flex: none; position: relative; }
+.coin.lg { width: 40px; height: 40px; font-size: 17px; }
+.coin .net { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--bg); font-size: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.coin.lg .net { width: 18px; height: 18px; font-size: 10px; }
+.c-btc { background: #f7931a; } .c-eth { background: #627eea; } .c-blrd { background: #1f5fbf; } .c-usdc { background: #2775ca; } .c-usdt { background: #26a17b; }
+.pill .coin { width: 22px; height: 22px; font-size: 11px; margin: -2px 6px -2px -4px; vertical-align: middle; }
+.pill .coin .net { width: 11px; height: 11px; font-size: 6px; right: -2px; bottom: -2px; }
+li .coin, nav .coin { width: 22px; height: 22px; font-size: 11px; margin-right: 8px; vertical-align: middle; }
+li .coin .net, nav .coin .net { width: 11px; height: 11px; font-size: 6px; right: -2px; bottom: -2px; }
+.withicon { display: inline-flex; align-items: center; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
 main { max-width: 400px; margin: 0 auto; padding: 40px 24px calc(48px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 28px; }
 h1 { text-align: center; font-size: 54px; font-weight: 500; letter-spacing: -0.03em; margin: 0; line-height: 1.1; font-variant-numeric: tabular-nums; }
@@ -136,6 +146,7 @@ function human(atoms, id, digits) {
   return t;
 }
 const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT') ? `${SYMBOL[id]}${Number(human(atoms, id, 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${human(atoms, id)} ${assets[id]?.symbol || id}`;
+const coinIcon = (id) => { const a = assets[id]; if (!a) return ''; const cls = 'c-' + (a.symbol === 'USDC' || a.symbol === 'USDT' ? a.symbol.toLowerCase() : a.chain); const net = a.chain === 'blrd' ? '' : `<span class="net c-${a.chain}">${a.chain === 'btc' ? '₿' : 'Ξ'}</span>`; return `<span class="coin ${cls}">${a.symbol[0]}${net}</span>`; };
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');
 
 // ----- state -----
@@ -204,6 +215,10 @@ const actions = {
   }),
   depositAsset: (el) => { state.deposit = { asset: el.dataset.value, unit: el.dataset.value === 'btc:BTC' ? 'usd' : 'native' }; render(); if (el.dataset.value === 'btc:BTC') btcPrice().then((p) => { state.btcPrice = p; render(); }); },
   depositUnit: (el) => { state.deposit.unit = el.dataset.value; render(); },
+  payMetaMask: (el) => run(async () => {
+    const txid = await payWithEthWallet(state.deposit.asset, el.dataset.to, el.dataset.amount);
+    (state.deposit.sent ||= {})[el.dataset.to] = txid;
+  }),
   depositDone: () => { clearInterval(state.depositTimer); state.deposit = null; render(); },
   cancelWithdraw: (el) => run(async () => { await tx(TxType.CancelOrder, { order_id: hex.dec(el.dataset.value) }); await loadWithdrawals(); await refresh(); }),
   dismissAccept: () => { state.accept = null; history.replaceState(null, '', location.pathname); render(); },
@@ -259,6 +274,10 @@ const forms = {
     }
     d.pays = pays; d.burn = left > 0n ? { address: (await j(`/account/${me()}`)).burn[a.chain], amount: left } : null;
     d.before = balanceOf(asset); d.watching = true; render(); watchDeposit();
+    if (a.chain === 'eth' && hasEthWallet()) {
+      for (const m of pays) { try { (d.sent ||= {})[m.taker_pay_to] = await payWithEthWallet(asset, m.taker_pay_to, m.taker_amount); render(); } catch (e) { state.error = e.message; render(); break; } }
+      if (d.burn && !state.error) { try { (d.sent ||= {})[d.burn.address] = await payWithEthWallet(asset, d.burn.address, d.burn.amount); render(); } catch (e) { state.error = e.message; render(); } }
+    }
   }),
   withdraw: (form) => run(async () => {
     const asset = form.asset.value; const amount = toAtoms(form.amount.value, asset);
@@ -281,6 +300,19 @@ async function btcPrice() {
     const t = await j('/trades?market=btc:BTC/eth:USDC&limit=1'); if (t?.length) return Number(t[0].price);
   } catch {}
   return null;
+}
+// Pay an Ethereum amount from the browser wallet when one is injected (MetaMask and friends).
+const hasEthWallet = () => typeof window.ethereum !== 'undefined';
+async function payWithEthWallet(asset, to, atoms) {
+  const a = assets[asset]; const eth = window.ethereum;
+  const [from] = await eth.request({ method: 'eth_requestAccounts' });
+  try { await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x1' }] }); } catch (e) { if (e.code !== 4001) throw new Error('Switch MetaMask to Ethereum mainnet.'); else throw e; }
+  const raw = BigInt(atoms) * BigInt(a.atom_scale || 1);
+  const pad = (h) => h.replace(/^0x/, '').padStart(64, '0');
+  const tx = a.contract
+    ? { from, to: a.contract, data: '0xa9059cbb' + pad(to) + pad(raw.toString(16)) }
+    : { from, to, value: '0x' + raw.toString(16) };
+  return eth.request({ method: 'eth_sendTransaction', params: [tx] });
 }
 async function watchDeposit() {
   clearInterval(state.depositTimer);
@@ -351,7 +383,7 @@ function render() {
     el.value = t.value; el.dispatchEvent(new Event('input', { bubbles: true }));
     if (t.focused) { el.focus(); try { el.setSelectionRange(t.pos, t.pos); } catch {} }
   }
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal withicon">${coinIcon('btc:BTC')}${money(balanceOf('btc:BTC'), 'btc:BTC')}<span style="width:14px"></span>${coinIcon('eth:USDC')}${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -397,7 +429,7 @@ const views = {
       ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
       <div class="stack center"><h1>${money(balanceOf(c), c)}</h1></div>
       ${body}
-      ${others.length ? `<ul class="assets">${others.map((h) => `<li><span>${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
+      ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
   },
   trade: () => `<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`,
   deposit: () => {
@@ -411,14 +443,16 @@ const views = {
             <p>Pay <b>${money(m.taker_amount, m.taker_asset)}</b> on ${chain} to</p>
             <div class="qr">${qrSvg(a.chain === 'btc' ? `bitcoin:${m.taker_pay_to}?amount=${human(m.taker_amount, m.taker_asset)}` : m.taker_pay_to)}</div>
             <p class="mono">${m.taker_pay_to}</p>
-            <button data-action="copy" data-text="${m.taker_pay_to}" data-label="Copy address">Copy address</button>
+            <div class="row center"><button data-action="copy" data-text="${m.taker_pay_to}" data-label="Copy address">Copy address</button>${a.chain === 'eth' && hasEthWallet() && m.status === 'open' ? `<button class="primary" data-action="payMetaMask" data-to="${m.taker_pay_to}" data-amount="${m.taker_amount}">Pay with MetaMask</button>` : ''}</div>
+            ${d.sent?.[m.taker_pay_to] ? `<p class="muted center">Sent ${short(d.sent[m.taker_pay_to], 14)} from your wallet.</p>` : ''}
             <p class="muted center">${m.status === 'closed' ? 'Paid; the balance is yours.' : m.status !== 'open' ? `This claim ${m.status}; the seller got their balance back.` : m.taker_txid ? `Payment ${short(m.taker_txid, 12)} seen; waiting for a block.` : 'Someone is leaving; you buy their balance by paying them directly. Watching the chain.'}</p>
           </div>`).join('')}
           ${d.burn ? `<div class="stack center" style="padding:12px 0;border-top:1px solid var(--line)">
             <p>Send <b>${money(d.burn.amount, d.asset)}</b> on ${chain} to your own address</p>
             <div class="qr">${qrSvg(a.chain === 'btc' ? `bitcoin:${d.burn.address}?amount=${human(d.burn.amount, d.asset)}` : d.burn.address)}</div>
             <p class="mono">${d.burn.address}</p>
-            <button data-action="copy" data-text="${d.burn.address}" data-label="Copy address">Copy address</button>
+            <div class="row center"><button data-action="copy" data-text="${d.burn.address}" data-label="Copy address">Copy address</button>${a.chain === 'eth' && hasEthWallet() ? `<button class="primary" data-action="payMetaMask" data-to="${d.burn.address}" data-amount="${d.burn.amount}">Pay with MetaMask</button>` : ''}</div>
+            ${d.sent?.[d.burn.address] ? `<p class="muted center">Sent ${short(d.sent[d.burn.address], 14)} from your wallet.</p>` : ''}
             <p class="muted center">${d.pays?.length ? 'That is all anyone is selling, so the rest' : 'Nobody is selling ' + (a?.symbol || '') + ', so this'} is minted: what you send here is burned on ${chain} and appears in your balance after ${a.chain === 'btc' ? 'one confirmation' : 'the block is final, about 15 minutes'}.</p>
           </div>` : ''}
           <button class="link" data-action="depositDone">Done</button>
@@ -426,7 +460,7 @@ const views = {
     }
     return `
       <h2>Deposit</h2>
-      <div class="row center">${[['eth:USDC', 'USDC on Ethereum'], ['btc:BTC', 'Bitcoin']].map(([id, label]) => `<button class="pill ${id === d.asset ? 'primary' : ''}" data-action="depositAsset" data-value="${id}">${label}</button>`).join('')}</div>
+      <div class="row center">${[['eth:USDC', 'USDC on Ethereum'], ['btc:BTC', 'Bitcoin']].map(([id, label]) => `<button class="pill ${id === d.asset ? 'primary' : ''}" data-action="depositAsset" data-value="${id}">${coinIcon(id)}${label}</button>`).join('')}</div>
       <form data-form="deposit" class="stack">
         ${d.asset === 'btc:BTC' ? `
         <div class="big-amount">
@@ -436,7 +470,6 @@ const views = {
         </div>
         <p class="muted center" id="dep-equiv">${d.unit === 'usd' ? '0 BTC' : '$0'}</p>` : `
         <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>`}
-        <p class="muted">You get an address to pay. If someone is leaving, you pay them and take their balance; otherwise your coins are burned and minted here, one for one.</p>
         <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Deposit</button>
       </form>`;
   },
