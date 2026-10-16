@@ -13,10 +13,10 @@ pub mod fb {
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_TX_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_TX_BODY: u8 = 13;
+pub const ENUM_MAX_TX_BODY: u8 = 14;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_TX_BODY: [TxBody; 14] = [
+pub const ENUM_VALUES_TX_BODY: [TxBody; 15] = [
   TxBody::NONE,
   TxBody::Transfer,
   TxBody::PlaceOrder,
@@ -31,6 +31,7 @@ pub const ENUM_VALUES_TX_BODY: [TxBody; 14] = [
   TxBody::Stake,
   TxBody::Unstake,
   TxBody::Liquidate,
+  TxBody::SetReceiveAddress,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -52,9 +53,10 @@ impl TxBody {
   pub const Stake: Self = Self(11);
   pub const Unstake: Self = Self(12);
   pub const Liquidate: Self = Self(13);
+  pub const SetReceiveAddress: Self = Self(14);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 13;
+  pub const ENUM_MAX: u8 = 14;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::Transfer,
@@ -70,6 +72,7 @@ impl TxBody {
     Self::Stake,
     Self::Unstake,
     Self::Liquidate,
+    Self::SetReceiveAddress,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -88,6 +91,7 @@ impl TxBody {
       Self::Stake => Some("Stake"),
       Self::Unstake => Some("Unstake"),
       Self::Liquidate => Some("Liquidate"),
+      Self::SetReceiveAddress => Some("SetReceiveAddress"),
       _ => None,
     }
   }
@@ -1931,6 +1935,119 @@ impl ::core::fmt::Debug for Liquidate<'_> {
       ds.finish()
   }
 }
+pub enum SetReceiveAddressOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SetReceiveAddress<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for SetReceiveAddress<'a> {
+  type Inner = SetReceiveAddress<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> SetReceiveAddress<'a> {
+  pub const VT_CHAIN: ::flatbuffers::VOffsetT = 4;
+  pub const VT_ADDRESS: ::flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    SetReceiveAddress { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SetReceiveAddressArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<SetReceiveAddress<'bldr>> {
+    let mut builder = SetReceiveAddressBuilder::new(_fbb);
+    if let Some(x) = args.address { builder.add_address(x); }
+    if let Some(x) = args.chain { builder.add_chain(x); }
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn chain(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(SetReceiveAddress::VT_CHAIN, None)}
+  }
+  #[inline]
+  pub fn address(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(SetReceiveAddress::VT_ADDRESS, None)}
+  }
+}
+
+impl ::flatbuffers::Verifiable for SetReceiveAddress<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("chain", Self::VT_CHAIN, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("address", Self::VT_ADDRESS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SetReceiveAddressArgs<'a> {
+    pub chain: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub address: Option<::flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for SetReceiveAddressArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SetReceiveAddressArgs {
+      chain: None,
+      address: None,
+    }
+  }
+}
+
+pub struct SetReceiveAddressBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> SetReceiveAddressBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_chain(&mut self, chain: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(SetReceiveAddress::VT_CHAIN, chain);
+  }
+  #[inline]
+  pub fn add_address(&mut self, address: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(SetReceiveAddress::VT_ADDRESS, address);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> SetReceiveAddressBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SetReceiveAddressBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<SetReceiveAddress<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for SetReceiveAddress<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("SetReceiveAddress");
+      ds.field("chain", &self.chain());
+      ds.field("address", &self.address());
+      ds.finish()
+  }
+}
 pub enum TxOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -2193,6 +2310,21 @@ impl<'a> Tx<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_set_receive_address(&self) -> Option<SetReceiveAddress<'a>> {
+    if self.body_type() == TxBody::SetReceiveAddress {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { SetReceiveAddress::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl ::flatbuffers::Verifiable for Tx<'_> {
@@ -2218,6 +2350,7 @@ impl ::flatbuffers::Verifiable for Tx<'_> {
           TxBody::Stake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Stake>>("TxBody::Stake", pos),
           TxBody::Unstake => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Unstake>>("TxBody::Unstake", pos),
           TxBody::Liquidate => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Liquidate>>("TxBody::Liquidate", pos),
+          TxBody::SetReceiveAddress => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<SetReceiveAddress>>("TxBody::SetReceiveAddress", pos),
           _ => Ok(()),
         }
      })?
@@ -2372,6 +2505,13 @@ impl ::core::fmt::Debug for Tx<'_> {
         },
         TxBody::Liquidate => {
           if let Some(x) = self.body_as_liquidate() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        TxBody::SetReceiveAddress => {
+          if let Some(x) = self.body_as_set_receive_address() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

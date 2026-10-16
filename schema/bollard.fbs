@@ -52,8 +52,11 @@ table Unstake { amount: uint64; asset: string; }
 // A holder of an under-collateralized issuer's options redeems them for BLRD
 // from the issuer's stake at a premium, instead of waiting for delivery.
 table Liquidate { issuer: [ubyte]; asset: string; quantity: uint64; }
+// A maker's standing offer to take deposits on a chain: the node keeps a minting order
+// open for every asset on that chain, paid to this address (an xpub gives each claim its own).
+table SetReceiveAddress { chain: string; address: string; }
 
-union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment, Mint, Burn, Send, Exercise, SetCurrency, Stake, Unstake, Liquidate }
+union TxBody { Transfer, PlaceOrder, CancelOrder, Claim, ReportPayment, Mint, Burn, Send, Exercise, SetCurrency, Stake, Unstake, Liquidate, SetReceiveAddress }
 
 table Tx { account: [ubyte]; nonce: uint64; body: TxBody; }
 

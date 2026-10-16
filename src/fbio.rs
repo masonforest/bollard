@@ -60,6 +60,7 @@ pub enum TxBody {
         asset: String,
         quantity: u64,
     },
+    SetReceiveAddress { chain: String, address: String },
     Burn { asset: String, quantity: u64 },
     Send {
         #[serde(serialize_with = "hex_bytes")]
@@ -138,6 +139,7 @@ impl ParsedEntry {
                 TxBody::Stake { .. } => "Stake",
                 TxBody::Unstake { .. } => "Unstake",
                 TxBody::Liquidate { .. } => "Liquidate",
+                TxBody::SetReceiveAddress { .. } => "SetReceiveAddress",
             },
             Body::EpochStart { .. } => "EpochStart",
             Body::ClaimExpired { .. } => "ClaimExpired",
@@ -220,6 +222,11 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let i = b.create_vector(issuer);
             let a = b.create_string(asset);
             (fb::TxBody::Liquidate, fb::Liquidate::create(&mut b, &fb::LiquidateArgs { issuer: Some(i), asset: Some(a), quantity: *quantity }).as_union_value())
+        }
+        TxBody::SetReceiveAddress { chain, address } => {
+            let c = b.create_string(chain);
+            let a = b.create_string(address);
+            (fb::TxBody::SetReceiveAddress, fb::SetReceiveAddress::create(&mut b, &fb::SetReceiveAddressArgs { chain: Some(c), address: Some(a) }).as_union_value())
         }
         TxBody::Burn { asset, quantity } => {
             let a = b.create_string(asset);
@@ -304,6 +311,10 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
         fb::TxBody::Liquidate => {
             let t = tx.body_as_liquidate().ok_or_else(|| anyhow!("bad Liquidate"))?;
             TxBody::Liquidate { issuer: bytes(t.issuer()).to_vec(), asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
+        }
+        fb::TxBody::SetReceiveAddress => {
+            let t = tx.body_as_set_receive_address().ok_or_else(|| anyhow!("bad SetReceiveAddress"))?;
+            TxBody::SetReceiveAddress { chain: t.chain().unwrap_or("").to_string(), address: t.address().unwrap_or("").to_string() }
         }
         fb::TxBody::Burn => {
             let t = tx.body_as_burn().ok_or_else(|| anyhow!("bad Burn"))?;

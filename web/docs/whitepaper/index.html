@@ -288,28 +288,14 @@
 <td>mint</td>
 <td>on-chain orders only: escrow nothing now; mint the options against the stake when a taker claims, staking the maker's free BLRD as needed. The book shows such an order's live capacity. If the claim is voided the options are destroyed again.</td>
 </tr>
-<tr>
-<td>quantity</td>
-<td>in base units; partial claims allowed</td>
-</tr>
-<tr>
-<td>price</td>
-<td>limit, quote per base</td>
-</tr>
-<tr>
-<td>claim bond</td>
-<td>BLRD a claimant must lock to claim an on-chain order; default 0</td>
-</tr>
-<tr>
-<td>receive address</td>
-<td>on-chain orders only: where the maker is paid: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo</td>
-</tr>
-<tr>
-<td>expiry</td>
-<td>a Bitcoin height; the order cancels itself there</td>
-</tr>
 </tbody>
 </table>
+<p>A maker need not rest deposit orders at all. SetReceiveAddress(chain, address) is a standing offer: the node keeps a minting order open, one for one and never expiring, for every asset on that chain, paid to that address. A holder can then deposit bitcoin or dollars whenever a maker with spare capacity exists, and the maker's BLRD is staked the moment the deposit is claimed.
+| quantity | in base units; partial claims allowed |
+| price | limit, quote per base |
+| claim bond | BLRD a claimant must lock to claim an on-chain order; default 0 |
+| receive address | on-chain orders only: where the maker is paid: a plain address, or an xpub, from which every claim gets its own address (child 0/i), so the maker's wallet can tell payments apart without a memo |
+| expiry | a Bitcoin height; the order cancels itself there |</p>
 <p>A sell order escrows the base (options, or BLRD) at placement; a ledger buy order escrows the quote. Escrow is what backs a resting order, so there is no separate bond.</p>
 <h3>Claim (taker)</h3>
 <table>

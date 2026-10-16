@@ -645,6 +645,42 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     events.push(ev("Unstake", json!({"account": hex::encode(&acct), "asset": asset, "amount": amount})));
                 }
 
+                TxBody::SetReceiveAddress { chain: ch, address } => {
+                    if ch != "btc" && ch != "eth" {
+                        bail!("chain must be btc or eth");
+                    }
+                    if !address.is_empty() {
+                        chain::receive_address(address, ch, 0)?;
+                    }
+                    // Replace this maker's standing offers on the chain.
+                    sqlx::query("update orders set status = 'cancelled' where account = $1 and standing and status = 'open' and base in (select unnest($2::text[]))")
+                        .bind(&acct)
+                        .bind(chain::ASSETS.iter().filter(|a| a.chain == *ch).map(|a| a.id.to_string()).collect::<Vec<_>>())
+                        .execute(&mut *c)
+                        .await?;
+                    if !address.is_empty() {
+                        for a in chain::ASSETS.iter().filter(|a| a.chain == *ch) {
+                            let mut idb = e.hash.to_vec();
+                            idb.extend_from_slice(a.id.as_bytes());
+                            let id = crate::crypto::sha256(&idb).to_vec();
+                            // One for one, minted against the stake as people claim, never expiring.
+                            sqlx::query("insert into orders (id, seq, account, market, base, quote, side, quantity, qty_left, price, bond, bond_left, claim_bond, fill_policy, recv_addr, expiry_height, status, settle, escrow_asset, escrow_left, mint, standing) values ($1,$2,$3,$4,$5,$5,1,$6,$6,$7,0,0,0,1,$8,$9,'open',1,$5,0,true,true)")
+                                .bind(&id)
+                                .bind(seq as i64)
+                                .bind(&acct)
+                                .bind(format!("{}/{}", a.id, a.id))
+                                .bind(a.id)
+                                .bind(i64::MAX / 4)
+                                .bind(PRICE_SCALE as i64)
+                                .bind(address)
+                                .bind(i32::MAX)
+                                .execute(&mut *c)
+                                .await?;
+                        }
+                    }
+                    events.push(ev("SetReceiveAddress", json!({"account": hex::encode(&acct), "chain": ch, "address": address})));
+                }
+
                 TxBody::Liquidate { issuer, asset, quantity } => {
                     let a = ledger::ensure_asset(asset)?;
                     if a.chain == "blrd" || *quantity == 0 {

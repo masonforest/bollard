@@ -98,6 +98,14 @@ pub enum TxCmd {
         #[arg(long)]
         quantity: u64,
     },
+    /// Take deposits on a chain without resting orders: an address (or xpub) where takers pay you; the node keeps minting orders open for every asset on that chain
+    SetReceiveAddress {
+        #[arg(long)]
+        chain: String,
+        /// An address, or an xpub for a fresh address per claim; empty to stop taking deposits
+        #[arg(long, default_value = "")]
+        address: String,
+    },
     /// Destroy options you issued and hold
     Burn {
         #[arg(long)]
@@ -219,6 +227,7 @@ pub async fn tx(a: TxArgs) -> Result<()> {
         TxCmd::Stake { amount, asset } => TxBody::Stake { amount, asset },
         TxCmd::Unstake { amount, asset } => TxBody::Unstake { amount, asset },
         TxCmd::Liquidate { issuer, asset, quantity } => TxBody::Liquidate { issuer: hex::decode(issuer)?, asset, quantity },
+        TxCmd::SetReceiveAddress { chain, address } => TxBody::SetReceiveAddress { chain, address },
         TxCmd::Burn { asset, quantity } => TxBody::Burn { asset, quantity },
         TxCmd::Send { to, asset, amount } => TxBody::Send { to: hex::decode(to)?, asset, amount },
         TxCmd::Exercise { asset, quantity, receive_address } => TxBody::Exercise { asset, quantity, receive_address },

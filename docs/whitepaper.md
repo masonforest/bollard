@@ -194,6 +194,8 @@ The book lives in the log, and every node rebuilds it from there. Makers rest or
 | market, side | a pair of supported assets, and buy or sell |
 | settle | on the ledger, or on chain |
 | mint | on-chain orders only: escrow nothing now; mint the options against the stake when a taker claims, staking the maker's free BLRD as needed. The book shows such an order's live capacity. If the claim is voided the options are destroyed again. |
+
+A maker need not rest deposit orders at all. SetReceiveAddress(chain, address) is a standing offer: the node keeps a minting order open, one for one and never expiring, for every asset on that chain, paid to that address. A holder can then deposit bitcoin or dollars whenever a maker with spare capacity exists, and the maker's BLRD is staked the moment the deposit is claimed.
 | quantity | in base units; partial claims allowed |
 | price | limit, quote per base |
 | claim bond | BLRD a claimant must lock to claim an on-chain order; default 0 |
