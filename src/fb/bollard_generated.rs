@@ -397,6 +397,7 @@ impl<'a> PlaceOrder<'a> {
   pub const VT_RECEIVE_ADDRESS: ::flatbuffers::VOffsetT = 18;
   pub const VT_EXPIRY_HEIGHT: ::flatbuffers::VOffsetT = 20;
   pub const VT_SETTLE: ::flatbuffers::VOffsetT = 22;
+  pub const VT_MINT: ::flatbuffers::VOffsetT = 24;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -415,6 +416,7 @@ impl<'a> PlaceOrder<'a> {
     builder.add_expiry_height(args.expiry_height);
     if let Some(x) = args.receive_address { builder.add_receive_address(x); }
     if let Some(x) = args.market { builder.add_market(x); }
+    builder.add_mint(args.mint);
     builder.add_settle(args.settle);
     builder.add_fill_policy(args.fill_policy);
     builder.add_side(args.side);
@@ -492,6 +494,13 @@ impl<'a> PlaceOrder<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u8>(PlaceOrder::VT_SETTLE, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn mint(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(PlaceOrder::VT_MINT, Some(false)).unwrap()}
+  }
 }
 
 impl ::flatbuffers::Verifiable for PlaceOrder<'_> {
@@ -510,6 +519,7 @@ impl ::flatbuffers::Verifiable for PlaceOrder<'_> {
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("receive_address", Self::VT_RECEIVE_ADDRESS, false)?
      .visit_field::<u32>("expiry_height", Self::VT_EXPIRY_HEIGHT, false)?
      .visit_field::<u8>("settle", Self::VT_SETTLE, false)?
+     .visit_field::<bool>("mint", Self::VT_MINT, false)?
      .finish();
     Ok(())
   }
@@ -525,6 +535,7 @@ pub struct PlaceOrderArgs<'a> {
     pub receive_address: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub expiry_height: u32,
     pub settle: u8,
+    pub mint: bool,
 }
 impl<'a> Default for PlaceOrderArgs<'a> {
   #[inline]
@@ -540,6 +551,7 @@ impl<'a> Default for PlaceOrderArgs<'a> {
       receive_address: None,
       expiry_height: 0,
       settle: 0,
+      mint: false,
     }
   }
 }
@@ -590,6 +602,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> PlaceOrderBuilder<'a, 'b, A> 
     self.fbb_.push_slot::<u8>(PlaceOrder::VT_SETTLE, settle, 0);
   }
   #[inline]
+  pub fn add_mint(&mut self, mint: bool) {
+    self.fbb_.push_slot::<bool>(PlaceOrder::VT_MINT, mint, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> PlaceOrderBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     PlaceOrderBuilder {
@@ -617,6 +633,7 @@ impl ::core::fmt::Debug for PlaceOrder<'_> {
       ds.field("receive_address", &self.receive_address());
       ds.field("expiry_height", &self.expiry_height());
       ds.field("settle", &self.settle());
+      ds.field("mint", &self.mint());
       ds.finish()
   }
 }
@@ -1575,6 +1592,7 @@ impl<'a> ::flatbuffers::Follow<'a> for Stake<'a> {
 
 impl<'a> Stake<'a> {
   pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
+  pub const VT_ASSET: ::flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -1583,10 +1601,11 @@ impl<'a> Stake<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args StakeArgs
+    args: &'args StakeArgs<'args>
   ) -> ::flatbuffers::WIPOffset<Stake<'bldr>> {
     let mut builder = StakeBuilder::new(_fbb);
     builder.add_amount(args.amount);
+    if let Some(x) = args.asset { builder.add_asset(x); }
     builder.finish()
   }
 
@@ -1598,6 +1617,13 @@ impl<'a> Stake<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(Stake::VT_AMOUNT, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn asset(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Stake::VT_ASSET, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Stake<'_> {
@@ -1607,18 +1633,21 @@ impl ::flatbuffers::Verifiable for Stake<'_> {
   ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
     v.visit_table(pos)?
      .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
      .finish();
     Ok(())
   }
 }
-pub struct StakeArgs {
+pub struct StakeArgs<'a> {
     pub amount: u64,
+    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
-impl<'a> Default for StakeArgs {
+impl<'a> Default for StakeArgs<'a> {
   #[inline]
   fn default() -> Self {
     StakeArgs {
       amount: 0,
+      asset: None,
     }
   }
 }
@@ -1631,6 +1660,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> StakeBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_amount(&mut self, amount: u64) {
     self.fbb_.push_slot::<u64>(Stake::VT_AMOUNT, amount, 0);
+  }
+  #[inline]
+  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Stake::VT_ASSET, asset);
   }
   #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> StakeBuilder<'a, 'b, A> {
@@ -1651,6 +1684,7 @@ impl ::core::fmt::Debug for Stake<'_> {
   fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
     let mut ds = f.debug_struct("Stake");
       ds.field("amount", &self.amount());
+      ds.field("asset", &self.asset());
       ds.finish()
   }
 }
@@ -1671,6 +1705,7 @@ impl<'a> ::flatbuffers::Follow<'a> for Unstake<'a> {
 
 impl<'a> Unstake<'a> {
   pub const VT_AMOUNT: ::flatbuffers::VOffsetT = 4;
+  pub const VT_ASSET: ::flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -1679,10 +1714,11 @@ impl<'a> Unstake<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args UnstakeArgs
+    args: &'args UnstakeArgs<'args>
   ) -> ::flatbuffers::WIPOffset<Unstake<'bldr>> {
     let mut builder = UnstakeBuilder::new(_fbb);
     builder.add_amount(args.amount);
+    if let Some(x) = args.asset { builder.add_asset(x); }
     builder.finish()
   }
 
@@ -1694,6 +1730,13 @@ impl<'a> Unstake<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(Unstake::VT_AMOUNT, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn asset(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Unstake::VT_ASSET, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Unstake<'_> {
@@ -1703,18 +1746,21 @@ impl ::flatbuffers::Verifiable for Unstake<'_> {
   ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
     v.visit_table(pos)?
      .visit_field::<u64>("amount", Self::VT_AMOUNT, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
      .finish();
     Ok(())
   }
 }
-pub struct UnstakeArgs {
+pub struct UnstakeArgs<'a> {
     pub amount: u64,
+    pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
-impl<'a> Default for UnstakeArgs {
+impl<'a> Default for UnstakeArgs<'a> {
   #[inline]
   fn default() -> Self {
     UnstakeArgs {
       amount: 0,
+      asset: None,
     }
   }
 }
@@ -1727,6 +1773,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> UnstakeBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_amount(&mut self, amount: u64) {
     self.fbb_.push_slot::<u64>(Unstake::VT_AMOUNT, amount, 0);
+  }
+  #[inline]
+  pub fn add_asset(&mut self, asset: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Unstake::VT_ASSET, asset);
   }
   #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> UnstakeBuilder<'a, 'b, A> {
@@ -1747,6 +1797,7 @@ impl ::core::fmt::Debug for Unstake<'_> {
   fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
     let mut ds = f.debug_struct("Unstake");
       ds.field("amount", &self.amount());
+      ds.field("asset", &self.asset());
       ds.finish()
   }
 }

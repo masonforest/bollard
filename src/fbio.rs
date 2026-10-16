@@ -33,6 +33,7 @@ pub enum TxBody {
         receive_address: String,
         expiry_height: u32,
         settle: u8,
+        mint: bool,
     },
     CancelOrder {
         #[serde(serialize_with = "hex_bytes")]
@@ -51,8 +52,8 @@ pub enum TxBody {
         txid: String,
     },
     Mint { asset: String, quantity: u64 },
-    Stake { amount: u64 },
-    Unstake { amount: u64 },
+    Stake { amount: u64, asset: String },
+    Unstake { amount: u64, asset: String },
     Liquidate {
         #[serde(serialize_with = "hex_bytes")]
         issuer: Vec<u8>,
@@ -169,7 +170,7 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let to = b.create_vector(to);
             (fb::TxBody::Transfer, fb::Transfer::create(&mut b, &fb::TransferArgs { to: Some(to), amount: *amount }).as_union_value())
         }
-        TxBody::PlaceOrder { market, side, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle } => {
+        TxBody::PlaceOrder { market, side, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle, mint } => {
             let market = b.create_string(market);
             let ra = b.create_string(receive_address);
             let args = fb::PlaceOrderArgs {
@@ -183,6 +184,7 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
                 receive_address: Some(ra),
                 expiry_height: *expiry_height,
                 settle: *settle,
+                mint: *mint,
             };
             (fb::TxBody::PlaceOrder, fb::PlaceOrder::create(&mut b, &args).as_union_value())
         }
@@ -206,8 +208,14 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let a = b.create_string(asset);
             (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity }).as_union_value())
         }
-        TxBody::Stake { amount } => (fb::TxBody::Stake, fb::Stake::create(&mut b, &fb::StakeArgs { amount: *amount }).as_union_value()),
-        TxBody::Unstake { amount } => (fb::TxBody::Unstake, fb::Unstake::create(&mut b, &fb::UnstakeArgs { amount: *amount }).as_union_value()),
+        TxBody::Stake { amount, asset } => {
+            let a = b.create_string(asset);
+            (fb::TxBody::Stake, fb::Stake::create(&mut b, &fb::StakeArgs { amount: *amount, asset: Some(a) }).as_union_value())
+        }
+        TxBody::Unstake { amount, asset } => {
+            let a = b.create_string(asset);
+            (fb::TxBody::Unstake, fb::Unstake::create(&mut b, &fb::UnstakeArgs { amount: *amount, asset: Some(a) }).as_union_value())
+        }
         TxBody::Liquidate { issuer, asset, quantity } => {
             let i = b.create_vector(issuer);
             let a = b.create_string(asset);
@@ -266,6 +274,7 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
                 receive_address: t.receive_address().unwrap_or("").to_string(),
                 expiry_height: t.expiry_height(),
                 settle: t.settle(),
+                mint: t.mint(),
             }
         }
         fb::TxBody::CancelOrder => {
@@ -284,8 +293,14 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
             let t = tx.body_as_mint().ok_or_else(|| anyhow!("bad Mint"))?;
             TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
         }
-        fb::TxBody::Stake => TxBody::Stake { amount: tx.body_as_stake().ok_or_else(|| anyhow!("bad Stake"))?.amount() },
-        fb::TxBody::Unstake => TxBody::Unstake { amount: tx.body_as_unstake().ok_or_else(|| anyhow!("bad Unstake"))?.amount() },
+        fb::TxBody::Stake => {
+            let t = tx.body_as_stake().ok_or_else(|| anyhow!("bad Stake"))?;
+            TxBody::Stake { amount: t.amount(), asset: t.asset().filter(|a| !a.is_empty()).unwrap_or("BLRD").to_string() }
+        }
+        fb::TxBody::Unstake => {
+            let t = tx.body_as_unstake().ok_or_else(|| anyhow!("bad Unstake"))?;
+            TxBody::Unstake { amount: t.amount(), asset: t.asset().filter(|a| !a.is_empty()).unwrap_or("BLRD").to_string() }
+        }
         fb::TxBody::Liquidate => {
             let t = tx.body_as_liquidate().ok_or_else(|| anyhow!("bad Liquidate"))?;
             TxBody::Liquidate { issuer: bytes(t.issuer()).to_vec(), asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }

@@ -64,6 +64,9 @@ pub enum TxCmd {
         /// ledger (both sides settle instantly) or chain (the taker pays on chain)
         #[arg(long, default_value = "ledger")]
         settle: String,
+        /// Mint on claim against your stake instead of escrowing options now (deposit orders only)
+        #[arg(long, default_value_t = false)]
+        mint: bool,
     },
     /// Issue options on an asset you will deliver on demand; your stake backs them
     Mint {
@@ -72,15 +75,19 @@ pub enum TxCmd {
         #[arg(long)]
         quantity: u64,
     },
-    /// Stake BLRD (rill): one pool that backs every option you issue
+    /// Stake BLRD (rill), or another maker's options (e.g. --asset btc:BTC): one pool that backs every option you issue
     Stake {
         #[arg(long)]
         amount: u64,
+        #[arg(long, default_value = "BLRD")]
+        asset: String,
     },
     /// Ask for staked BLRD back; it returns after the unstake delay and is slashable until then
     Unstake {
         #[arg(long)]
         amount: u64,
+        #[arg(long, default_value = "BLRD")]
+        asset: String,
     },
     /// Redeem an under-collateralized issuer's options for BLRD from its stake, at a premium
     Liquidate {
@@ -191,7 +198,8 @@ pub async fn tx(a: TxArgs) -> Result<()> {
     };
     let body = match a.cmd {
         TxCmd::Transfer { to, amount } => TxBody::Transfer { to: hex::decode(to)?, amount },
-        TxCmd::PlaceOrder { market, side: s, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle } => TxBody::PlaceOrder {
+        TxCmd::PlaceOrder { market, side: s, quantity, price, bond, claim_bond, fill_policy, receive_address, expiry_height, settle, mint } => TxBody::PlaceOrder {
+            mint,
             market,
             side: side(&s)?,
             quantity,
@@ -208,8 +216,8 @@ pub async fn tx(a: TxArgs) -> Result<()> {
             },
         },
         TxCmd::Mint { asset, quantity } => TxBody::Mint { asset, quantity },
-        TxCmd::Stake { amount } => TxBody::Stake { amount },
-        TxCmd::Unstake { amount } => TxBody::Unstake { amount },
+        TxCmd::Stake { amount, asset } => TxBody::Stake { amount, asset },
+        TxCmd::Unstake { amount, asset } => TxBody::Unstake { amount, asset },
         TxCmd::Liquidate { issuer, asset, quantity } => TxBody::Liquidate { issuer: hex::decode(issuer)?, asset, quantity },
         TxCmd::Burn { asset, quantity } => TxBody::Burn { asset, quantity },
         TxCmd::Send { to, asset, amount } => TxBody::Send { to: hex::decode(to)?, asset, amount },

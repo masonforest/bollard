@@ -33,7 +33,7 @@ export function buildTx(account, nonce, type, body) {
     case TxType.PlaceOrder: {
       const market = b.createString(body.market);
       const ra = b.createString(body.receive_address ?? '');
-      b.startObject(10);
+      b.startObject(11);
       b.addFieldOffset(0, market, 0);
       b.addFieldInt8(1, body.side, 0);
       b.addFieldInt64(2, big(body.quantity), 0n);
@@ -44,6 +44,7 @@ export function buildTx(account, nonce, type, body) {
       b.addFieldOffset(7, ra, 0);
       b.addFieldInt32(8, body.expiry_height, 0);
       b.addFieldInt8(9, body.settle ?? 0, 0);
+      b.addFieldInt8(10, body.mint ? 1 : 0, 0);
       off = b.endObject(); break;
     }
     case TxType.Mint: {
@@ -55,7 +56,8 @@ export function buildTx(account, nonce, type, body) {
       b.startObject(3); b.addFieldOffset(0, i, 0); b.addFieldOffset(1, a, 0); b.addFieldInt64(2, big(body.quantity), 0n); off = b.endObject(); break;
     }
     case TxType.Stake: case TxType.Unstake: {
-      b.startObject(1); b.addFieldInt64(0, big(body.amount), 0n); off = b.endObject(); break;
+      const a = b.createString(body.asset ?? 'BLRD');
+      b.startObject(2); b.addFieldInt64(0, big(body.amount), 0n); b.addFieldOffset(1, a, 0); off = b.endObject(); break;
     }
     case TxType.Burn: {
       const a = b.createString(body.asset);

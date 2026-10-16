@@ -38,8 +38,9 @@ bollard keygen
 bollard tx --node https://mainnet.bollard.exchange stake --amount 1000000000
 # issue 1 BTC of options
 bollard tx mint --asset btc:BTC --quantity 100000000
-# sell them for on-chain bitcoin (a deposit order); every claim gets its own address from the xpub
-bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --quantity 100000000 --price 100000000 \
+# sell bitcoin for on-chain bitcoin (a deposit order), minted against your stake as people claim;
+# every claim gets its own address from the xpub
+bollard tx place-order --market btc:BTC/btc:BTC --side sell --settle 1 --mint --quantity 100000000 --price 100000000 \
   --receive-address xpub... --expiry-height 980000
 # or rest them on the ledger against dollars
 bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quantity 100000000 --price 9000000000000 --expiry-height 980000

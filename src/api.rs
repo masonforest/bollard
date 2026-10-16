@@ -117,6 +117,21 @@ async fn book(State(n): S, Query(q): Query<BookQuery>) -> ApiResult {
     let bids = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 0 and settle = 0 order by price desc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
     let asks = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and side = 1 and settle = 0 order by price asc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
     let deposits = sqlx::query_as::<_, db::Order>("select * from orders where market = $1 and status = 'open' and settle = 1 order by price asc, seq asc limit 200").bind(&q.market).fetch_all(&n.db).await?;
+    // A minting order can only sell what the maker's stake (plus free BLRD) covers right now.
+    let height = n.height();
+    let mut c = n.db.acquire().await?;
+    let mut deposits: Vec<Value> = deposits.into_iter().map(|o| json!(o)).collect();
+    for d in deposits.iter_mut() {
+        if d["mint"].as_bool() == Some(true) {
+            let acct = hex::decode(d["account"].as_str().unwrap_or("")).unwrap_or_default();
+            let base = d["base"].as_str().unwrap_or("").to_string();
+            let cap = crate::apply::mint_capacity(&mut c, &acct, height).await.unwrap_or(0);
+            let price = crate::apply::oracle_price(&mut c, &base, height).await.ok().flatten().unwrap_or(0) as i128;
+            let qty_cap = if price > 0 { cap * crate::apply::PRICE_SCALE as i128 / price } else { 0 };
+            let left = d["qty_left"].as_i64().unwrap_or(0) as i128;
+            d["qty_left"] = json!(left.min(qty_cap) as i64);
+        }
+    }
     Ok(Json(json!({"market": q.market, "bids": bids, "asks": asks, "deposits": deposits})))
 }
 

@@ -20,6 +20,7 @@ table PlaceOrder {
   receive_address: string; // maker's address on the chain of the asset it is buying
   expiry_height: uint32;   // Bitcoin height at which the order cancels itself
   settle: ubyte;           // 0 = both legs are ledger options (instant); 1 = the taker pays on chain
+  mint: bool;              // settle=1 only: nothing is escrowed; options are minted against the maker's stake when claimed
 }
 
 table CancelOrder { order_id: [ubyte]; }
@@ -46,8 +47,8 @@ table Exercise { asset: string; quantity: uint64; receive_address: string; }
 table SetCurrency { asset: string; }
 
 // Stake BLRD: one pool per maker that every option it issues draws on. Unstaking waits UNSTAKE_DELAY blocks.
-table Stake { amount: uint64; }
-table Unstake { amount: uint64; }
+table Stake { amount: uint64; asset: string; }   // asset: BLRD (default), or another issuer's options such as btc:BTC or eth:USDC
+table Unstake { amount: uint64; asset: string; }
 // A holder of an under-collateralized issuer's options redeems them for BLRD
 // from the issuer's stake at a premium, instead of waiting for delivery.
 table Liquidate { issuer: [ubyte]; asset: string; quantity: uint64; }

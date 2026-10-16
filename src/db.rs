@@ -66,6 +66,7 @@ pub struct Order {
     pub settle: i16,
     pub escrow_asset: String,
     pub escrow_left: i64,
+    pub mint: bool,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

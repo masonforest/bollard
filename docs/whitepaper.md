@@ -145,18 +145,18 @@ A maker's stake is one pool. It is not split per asset or per order: everything 
 
 | Transaction | Effect |
 | --- | --- |
-| Stake(amount) | Moves BLRD from the maker's balance into its stake. |
-| Unstake(amount) | Asks for BLRD back. It returns to the balance 144 blocks later, and until then it still backs the maker's options and can still be slashed. |
+| Stake(asset, amount) | Moves BLRD from the maker's balance into its stake, or options issued by another maker, such as bitcoin or dollars. A maker's own options cannot back its own promises. |
+| Unstake(asset, amount) | Asks for stake back. BLRD returns to the balance 144 blocks later, and until then it still backs the maker's options and can still be slashed; staked options return at once. Either fails if what remains would not cover the issuance. |
 | Mint(asset, quantity) | Creates `quantity` options on `asset` in the issuer's own balance. Requires a stake. |
 | Burn(asset, quantity) | Destroys options the issuer holds. |
 
 ### The oracle
 
-The protocol does judge whether a stake is enough, and it does so without any outside price feed. Every market on Bollard is quoted in dollars, so the ledger has a dollar price for every asset, BLRD included, in its own log: the trade-weighted average over the last 144 blocks of that asset's USDC market. Only fills count, never resting orders, so a price cannot be moved by posting an order nobody takes; moving a day-long average costs real money against everyone else trading. If a day has no trades the month's average is used. BLRD alone has a genesis price, one dollar, used only until its market has traded; it is never consulted again.
+The protocol does judge whether a stake is enough, and it does so without any outside price feed. Every market on Bollard is quoted in dollars, so the ledger has a dollar price for every asset, BLRD included, in its own log: the trade-weighted average over the last 144 blocks of that asset's USDC market. Only fills count, never resting orders, so a price cannot be moved by posting an order nobody takes; moving a day-long average costs real money against everyone else trading. If a day has no trades the month's average is used. Each asset has a genesis price in the software, used only until its market has traded and never consulted again: one dollar for BLRD, and opening prices for bitcoin, ether and Tether.
 
 ### The ratio
 
-A maker's stake, valued at the BLRD price, must cover everything the maker has issued, valued at those prices, by a ratio of 150%. The ratio is not fixed: it is scaled by how far BLRD's daily average sits above its monthly average.
+A maker's stake, BLRD at the BLRD price plus any staked options at theirs, must cover everything the maker has issued, valued at those prices, by a ratio of 150%. The ratio is not fixed: it is scaled by how far BLRD's daily average sits above its monthly average.
 
 ratio = 150% × max(1, price over the last day / price over the last month)
 
@@ -193,6 +193,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest or
 | --- | --- |
 | market, side | a pair of supported assets, and buy or sell |
 | settle | on the ledger, or on chain |
+| mint | on-chain orders only: escrow nothing now; mint the options against the stake when a taker claims, staking the maker's free BLRD as needed. The book shows such an order's live capacity. If the claim is voided the options are destroyed again. |
 | quantity | in base units; partial claims allowed |
 | price | limit, quote per base |
 | claim bond | BLRD a claimant must lock to claim an on-chain order; default 0 |
