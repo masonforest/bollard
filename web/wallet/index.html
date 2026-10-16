@@ -70,6 +70,7 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 main.full { max-width: none; padding: 0; }
 .overlay { position: fixed; inset: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; cursor: pointer; }
 iframe.trade { display: block; width: 100%; height: calc(100dvh - 52px - env(safe-area-inset-top)); border: 0; }
+main.full > p.center { margin: 8px 0 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 2px; padding: 0 16px; padding-top: env(safe-area-inset-top); }
@@ -161,6 +162,7 @@ const nav = document.querySelector('nav');
 async function refresh() {
   if (!state.key) return render();
   state.info = await j(`/balances/${me()}`);
+  try { state.prices = (await j('/oracle')).prices; } catch {}
   await checkFlight();
   render();
 }
@@ -201,6 +203,8 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
+  buy: () => { state.buying = true; render(); },
+  buyDone: () => { state.buying = false; render(); },
   advanced: (el) => { try { localStorage.setItem('bollard.advanced', el.dataset.value); } catch {} render(); },
   share: (el) => shareLink(el.dataset.link),
   qr: (el) => { state.qr = el.dataset.link; render(); },
@@ -233,7 +237,7 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.success = null; state.qr = null; if (state.view === 'activity') loadActivity(); render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.success = null; state.qr = null; state.buying = false; if (state.view === 'activity') loadActivity(); render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
 };
@@ -371,9 +375,10 @@ function render() {
     return;
   }
   const v = state.accept ? acceptView : (views[state.view] || views.home);
-  main.classList.toggle('full', state.view === 'trade' && !state.accept);
+  const framed = state.view === 'portfolio' && (advanced() || state.buying);
+  main.classList.toggle('full', framed && !state.accept);
   // Refreshes must not rebuild the Trade frame, or whatever is typed in it is lost.
-  if (state.view === 'trade' && !state.accept && !state.busy && !state.error && main.querySelector('iframe.trade')) return;
+  if (framed && !state.accept && !state.busy && !state.error && main.querySelector('iframe.trade')) return;
   // Background refreshes re-render; keep whatever the user has typed, and where the caret was.
   const typed = [...main.querySelectorAll('input[name], select[name]')].map((el) => ({ name: el.name, value: el.value, focused: document.activeElement === el, pos: el.selectionStart }));
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '') + (state.qr ? `<div class="overlay" data-action="closeqr"><div class="qr big">${qrSvg(state.qr)}</div><p class="muted">Tap to close</p></div>` : '');
@@ -382,7 +387,7 @@ function render() {
     el.value = t.value; el.dispatchEvent(new Event('input', { bubbles: true }));
     if (t.focused) { el.focus(); try { el.setSelectionRange(t.pos, t.pos); } catch {} }
   }
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['portfolio', 'Portfolio'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -430,7 +435,24 @@ const views = {
       ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
   },
-  trade: () => `<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`,
+  portfolio: () => {
+    // Advanced mode is the full trade view: chart, book and taking. Simple mode is what you hold.
+    if (advanced() || state.buying) return `${state.buying && !advanced() ? '<p class="center"><button class="link" data-action="buyDone">← Back to portfolio</button></p>' : ''}<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`;
+    const held = holdings();
+    const prices = state.prices || {};
+    const value = (h) => { const p = prices[h.asset]; return p ? (h.amount * BigInt(p)) / 100000000n : null; };
+    const total = held.reduce((n, h) => n + (value(h) || 0n), 0n);
+    const canPay = balanceOf('eth:USDC') > 0n;
+    const buy = `<div class="stack center">
+      <button class="primary" data-action="buy" ${canPay ? '' : 'disabled'} style="width:min(300px,100%)">Buy an asset</button>
+      ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <button class="link" data-action="tab" data-value="deposit">Deposit first</button></p>'}</div>`;
+    if (!held.length) return `<h2>Portfolio</h2><p class="muted center">You don't have any assets yet.</p>${buy}`;
+    return `
+      <h2>Portfolio</h2>
+      <div class="stack center"><h1>${money(total, 'eth:USDC')}</h1></div>
+      <ul class="assets">${held.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}<span>${NAMES[h.asset] || h.asset}<span class="sub">${money(h.amount, h.asset)}</span></span></span><span>${value(h) !== null ? money(value(h), 'eth:USDC') : '<span class="muted">no price yet</span>'}</span></li>`).join('')}</ul>
+      ${buy}`;
+  },
   deposit: () => {
     const d = state.deposit || (state.deposit = { asset: 'eth:USDC', unit: 'native' });
     const a = assets[d.asset]; const chain = CHAIN[a?.chain] || '';
@@ -503,7 +525,7 @@ const views = {
       <p class="muted">What you see your balance in and what you receive. Anything sent to you in another currency is converted on the way.</p>
       <span class="label">Advanced mode</span>
       <div class="row"><button class="pill ${advanced() ? 'primary' : ''}" data-action="advanced" data-value="1">On</button><button class="pill ${advanced() ? '' : 'primary'}" data-action="advanced" data-value="0">Off</button></div>
-      <p class="muted">Trade shows the order book and chart instead of plain Buy and Sell.</p>
+      <p class="muted">Portfolio shows the chart, the order book and taking, instead of a plain list of what you hold.</p>
       <span class="label">Account</span>
       <p class="mono">${me()}</p>
       <p class="muted">Signed in with a passkey. The same passkey signs you in on your other devices.</p>
