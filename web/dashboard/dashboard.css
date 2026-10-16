@@ -68,7 +68,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .market-row select { font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
 
 /* coin logos */
-.coin { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; flex: none; position: relative; }
+.coin { display: inline-flex; width: 28px; height: 28px; flex: none; }
+.coin svg { width: 100%; height: 100%; display: block; }
 .coin.lg { width: 40px; height: 40px; font-size: 17px; }
 .coin .net { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--bg); font-size: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .coin.lg .net { width: 18px; height: 18px; font-size: 10px; }

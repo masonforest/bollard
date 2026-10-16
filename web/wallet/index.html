@@ -22,15 +22,9 @@
 @media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #111; --muted: #777; --line: #2a2a2a; --accent: #6ea0ff; --on-accent: #06152b; --ok: #22c55e; } }
 * { box-sizing: border-box; }
 .hidden { display: none !important; }
-.coin { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; flex: none; position: relative; }
-.coin.lg { width: 40px; height: 40px; font-size: 17px; }
-.coin .net { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--bg); font-size: 8px; display: inline-flex; align-items: center; justify-content: center; }
-.coin.lg .net { width: 18px; height: 18px; font-size: 10px; }
-.c-btc { background: #f7931a; } .c-eth { background: #627eea; } .c-blrd { background: #1f5fbf; } .c-usdc { background: #2775ca; } .c-usdt { background: #26a17b; }
-.pill .coin { width: 22px; height: 22px; font-size: 11px; margin: -2px 6px -2px -4px; vertical-align: middle; }
-.pill .coin .net { width: 11px; height: 11px; font-size: 6px; right: -2px; bottom: -2px; }
-li .coin, nav .coin { width: 22px; height: 22px; font-size: 11px; margin-right: 8px; vertical-align: middle; }
-li .coin .net, nav .coin .net { width: 11px; height: 11px; font-size: 6px; right: -2px; bottom: -2px; }
+.logo { width: 22px; height: 22px; vertical-align: middle; flex: none; }
+.pill .logo { margin: -2px 6px -2px -6px; }
+li .logo { margin-right: 8px; }
 .withicon { display: inline-flex; align-items: center; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
 main { max-width: 400px; margin: 0 auto; padding: 40px 24px calc(48px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 28px; }
@@ -146,7 +140,14 @@ function human(atoms, id, digits) {
   return t;
 }
 const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT') ? `${SYMBOL[id]}${Number(human(atoms, id, 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${human(atoms, id)} ${assets[id]?.symbol || id}`;
-const coinIcon = (id) => { const a = assets[id]; if (!a) return ''; const cls = 'c-' + (a.symbol === 'USDC' || a.symbol === 'USDT' ? a.symbol.toLowerCase() : a.chain); const net = a.chain === 'blrd' ? '' : `<span class="net c-${a.chain}">${a.chain === 'btc' ? '₿' : 'Ξ'}</span>`; return `<span class="coin ${cls}">${a.symbol[0]}${net}</span>`; };
+const LOGOS = {
+  'eth:USDC': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#2775CA"/><path fill="#fff" d="M20.5 18.6c0-2.3-1.4-3.1-4.2-3.5-2-.3-2.4-.8-2.4-1.7s.7-1.5 2-1.5c1.2 0 1.9.4 2.2 1.4.1.2.3.3.5.3h1.1c.3 0 .5-.2.4-.5-.3-1.5-1.4-2.6-3-2.9V8.8c0-.3-.2-.5-.5-.5h-1c-.3 0-.5.2-.5.5v1.4c-2 .3-3.3 1.6-3.3 3.3 0 2.2 1.3 3 4.1 3.4 1.9.3 2.5.7 2.5 1.8s-.9 1.7-2.2 1.7c-1.6 0-2.2-.7-2.4-1.6-.1-.2-.3-.4-.5-.4h-1.2c-.3 0-.5.2-.4.5.3 1.7 1.4 2.9 3.4 3.2v1.4c0 .3.2.5.5.5h1c.3 0 .5-.2.5-.5v-1.4c2-.3 3.4-1.7 3.4-3.5z"/><path fill="#fff" d="M12.6 25.6c-5.2-1.9-7.9-7.7-6-12.9 1-2.8 3.2-4.9 6-5.9.3-.1.4-.3.4-.6v-.9c0-.3-.1-.5-.4-.5h-.2C6 6.8 2.5 13.6 4.5 19.9c1.2 3.7 4.1 6.6 7.8 7.8.3.1.5 0 .6-.3v-1.2c0-.2-.1-.4-.3-.6zm7-19.9c-.3-.1-.5 0-.6.3v1.1c0 .2.1.4.3.6 5.2 1.9 7.9 7.7 6 12.9-1 2.8-3.2 4.9-6 5.9-.3.1-.4.3-.4.6v.9c0 .3.1.5.4.5h.2c6.4-2 9.9-8.8 7.9-15.1-1.2-3.8-4.1-6.7-7.8-7.7z"/></svg>`,
+  'btc:BTC': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#F7931A"/><text x="16" y="22" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif" transform="rotate(-12 16 16)">₿</text></svg>`,
+  'eth:ETH': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#627EEA"/><path fill="#fff" fill-opacity=".6" d="M16 5v8.1l6.9 3.1z"/><path fill="#fff" d="M16 5l-6.9 11.2 6.9-3.1z"/><path fill="#fff" fill-opacity=".6" d="M16 21.7V27l6.9-9.6z"/><path fill="#fff" d="M16 27v-5.3l-6.9-4.3z"/><path fill="#fff" fill-opacity=".2" d="M16 20.4l6.9-4.2-6.9-3.1z"/><path fill="#fff" fill-opacity=".6" d="M9.1 16.2l6.9 4.2v-7.3z"/></svg>`,
+  'eth:USDT': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#26A17B"/><path fill="#fff" d="M17.9 17.9v-.1c-.1 0-.7.1-1.9.1-1 0-1.7 0-1.9-.1v.1c-3.7-.2-6.5-.8-6.5-1.6s2.8-1.4 6.5-1.6v2.6c.3 0 1 .1 1.9.1 1.1 0 1.7-.1 1.9-.1v-2.6c3.7.2 6.5.8 6.5 1.6s-2.8 1.4-6.5 1.6zm0-3.5v-2.3h5.2V8.6H8.9v3.5h5.2v2.3c-4.2.2-7.4 1-7.4 2s3.2 1.8 7.4 2v7.5h3.8v-7.5c4.2-.2 7.4-1 7.4-2s-3.2-1.8-7.4-2z"/></svg>`,
+  'BLRD': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#1F5FBF"/><text x="16" y="22" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif">B</text></svg>`,
+};
+const coinIcon = (id) => LOGOS[id] || '';
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');
 
 // ----- state -----
@@ -383,7 +384,7 @@ function render() {
     el.value = t.value; el.dispatchEvent(new Event('input', { bubbles: true }));
     if (t.focused) { el.focus(); try { el.setSelectionRange(t.pos, t.pos); } catch {} }
   }
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal withicon">${coinIcon('btc:BTC')}${money(balanceOf('btc:BTC'), 'btc:BTC')}<span style="width:14px"></span>${coinIcon('eth:USDC')}${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['trade', 'Trade'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
