@@ -47,6 +47,7 @@ p { margin: 0; }
 button, .button { font: inherit; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 999px; padding: 10px 20px; cursor: pointer; text-decoration: none; display: inline-block; }
 button.primary { background: var(--accent); color: var(--on-accent); }
 button.link { border: 0; padding: 0; color: var(--muted); }
+a.golink { color: var(--accent); text-decoration: underline; cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: default; }
 input, select { font: inherit; color: var(--fg); background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 0; width: 100%; outline: none; border-radius: 0; }
 input:focus, select:focus { border-color: var(--accent); }
@@ -445,7 +446,7 @@ const views = {
     const canPay = balanceOf('eth:USDC') > 0n;
     const buy = `<div class="stack center">
       <button class="primary" data-action="buy" ${canPay ? '' : 'disabled'} style="width:min(300px,100%)">Buy an asset</button>
-      ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <button class="link" data-action="tab" data-value="deposit">Deposit first</button></p>'}</div>`;
+      ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <a href="#deposit" class="golink" data-action="tab" data-value="deposit">Deposit first</a></p>'}</div>`;
     if (!held.length) return `<h2>Portfolio</h2><p class="muted center">You don't have any assets yet.</p>${buy}`;
     return `
       <h2>Portfolio</h2>
@@ -534,7 +535,7 @@ const views = {
 };
 
 // ----- wiring -----
-main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
+main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el); } });
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
 main.addEventListener('input', (e) => {
