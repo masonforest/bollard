@@ -446,7 +446,7 @@ const views = {
     const canPay = balanceOf('eth:USDC') > 0n;
     const buy = `<div class="stack center">
       <button class="primary" data-action="buy" ${canPay ? '' : 'disabled'} style="width:min(300px,100%)">Buy an asset</button>
-      ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <a href="#deposit" class="golink" data-action="tab" data-value="deposit">Deposit first</a></p>'}</div>`;
+      ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <a href="#deposit" class="golink" data-action="tab" data-value="deposit">Deposit</a> first.</p>'}</div>`;
     if (!held.length) return `<h2>Portfolio</h2><p class="muted center">You don't have any assets yet.</p>${buy}`;
     return `
       <h2>Portfolio</h2>
