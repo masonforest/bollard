@@ -33,6 +33,11 @@ enum Cmd {
     Enter(enter::EnterArgs),
     /// Build, sign and submit a transaction to a node.
     Tx(client::TxArgs),
+    /// Print the Bitcoin and Ethereum addresses a secp256k1 account key controls.
+    Addresses {
+        #[arg(long)]
+        pubkey: String,
+    },
 }
 
 #[tokio::main]
@@ -45,5 +50,15 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Keygen => client::keygen(),
         Cmd::Enter(args) => enter::enter(args).await,
         Cmd::Tx(args) => client::tx(args).await,
+        Cmd::Addresses { pubkey } => {
+            let pk = crypto::pubkey_from_hex(&pubkey)?;
+            let cpk = bitcoin::CompressedPublicKey(bitcoin::secp256k1::PublicKey::from_slice(&pk)?);
+            println!("bitcoin  {}", bitcoin::Address::p2wpkh(&cpk, bitcoin::Network::Bitcoin));
+            use sha3::{Digest, Keccak256};
+            let unc = cpk.0.serialize_uncompressed();
+            let h = Keccak256::digest(&unc[1..]);
+            println!("ethereum 0x{}", hex::encode(&h[12..]));
+            Ok(())
+        }
     }
 }
