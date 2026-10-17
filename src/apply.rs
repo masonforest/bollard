@@ -93,6 +93,62 @@ async fn account_full(c: &mut PgConnection, pk: &[u8]) -> Result<(i64, i64, i64,
     Ok(r)
 }
 
+/// Which makers deliver an exercise of `quantity` of `asset`: issuers of that
+/// asset ordered by collateral ratio, thinnest first, each for at most what it
+/// has outstanding.
+async fn assign_issuers(c: &mut PgConnection, asset: &str, quantity: i64, height: u32) -> Result<Vec<(Vec<u8>, i64)>> {
+    let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0").bind(asset).fetch_all(&mut *c).await?;
+    let mut ranked = Vec::new();
+    for (acct, issued) in rows {
+        let iv = issued_value(c, &acct, height).await.unwrap_or(1).max(1);
+        let sv = stake_value(c, &acct, height).await?;
+        ranked.push((sv * 1_000_000 / iv, acct, issued));
+    }
+    ranked.sort();
+    let mut left = quantity;
+    let mut out = Vec::new();
+    for (_, acct, issued) in ranked {
+        if left <= 0 {
+            break;
+        }
+        let take = left.min(issued);
+        out.push((acct, take));
+        left -= take;
+    }
+    if left > 0 {
+        bail!("no issuer is left to deliver {left} {asset}");
+    }
+    Ok(out)
+}
+
+/// When a maker's reserved stake did not cover what it owed, the other issuers
+/// of the same asset make up the difference in proportion to what they issued.
+/// This is what makes one maker's option as good as another's.
+async fn socialize_shortfall(c: &mut PgConnection, asset: &str, except: &[u8], mut value: i128, to: &[u8], height: u32) -> Result<i128> {
+    let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0 and account <> $2").bind(asset).bind(except).fetch_all(&mut *c).await?;
+    let total: i128 = rows.iter().map(|r| r.1 as i128).sum();
+    if total == 0 || value <= 0 {
+        return Ok(value.max(0));
+    }
+    let p_blrd = oracle_price(c, BLRD, height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+    let want = value;
+    for (acct, issued) in rows {
+        let share = want * issued as i128 / total;
+        if share <= 0 {
+            continue;
+        }
+        let (_, _, _, staked, unstaking, _) = account_full(c, &acct).await?;
+        let blrd = (share * PRICE_SCALE as i128 / p_blrd.max(1)).min((staked + unstaking) as i128) as i64;
+        let from_staked = blrd.min(staked);
+        sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(&acct).bind(from_staked).bind(blrd - from_staked).execute(&mut *c).await?;
+        credit(c, to, blrd).await?;
+        let covered = blrd as i128 * p_blrd / PRICE_SCALE as i128;
+        let rest = pay_from_staked_lots(c, &acct, to, share - covered, height).await?;
+        value -= share - rest;
+    }
+    Ok(value.max(0))
+}
+
 /// Move every lot held under `from` (a match or stake account) to `to`.
 async fn move_all_lots(c: &mut PgConnection, from: &[u8], to: &[u8]) -> Result<()> {
     let rows: Vec<(String, i64)> = sqlx::query_as("select asset, sum(amount)::bigint from balances where account = $1 group by asset").bind(from).fetch_all(&mut *c).await?;
@@ -574,9 +630,12 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     if *quantity == 0 {
                         bail!("quantity must be positive");
                     }
+                    if ledger::total(c, &stake_account(&acct), asset).await? > 0 {
+                        bail!("you have {asset} staked; a maker cannot issue an asset it uses as collateral");
+                    }
                     let issued = ledger::issued(c, &acct, asset).await?;
                     ledger::set_issued(c, &acct, asset, issued + i(*quantity)?).await?;
-                    ledger::credit(c, &acct, asset, &acct, i(*quantity)?).await?;
+                    ledger::credit(c, &acct, asset, ledger::NO_ISSUER, i(*quantity)?).await?;
                     check_collateral(c, &acct, e.height).await?;
                     events.push(ev("Mint", json!({"issuer": hex::encode(&acct), "asset": asset, "quantity": quantity})));
                 }
@@ -590,25 +649,12 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         debit(c, &acct, amt).await?;
                         sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&acct).bind(amt).execute(&mut *c).await?;
                     } else {
-                        // Another maker's options can back yours; your own cannot.
+                        // Options can back a maker's promises, but not options on an asset the maker itself issues.
                         ledger::ensure_asset(asset)?;
-                        let own: Option<i64> = sqlx::query_scalar("select amount from balances where account = $1 and asset = $2 and issuer = $1").bind(&acct).bind(asset).fetch_optional(&mut *c).await?;
-                        let total = ledger::total(c, &acct, asset).await?;
-                        if total - own.unwrap_or(0) < amt {
-                            bail!("you hold only {} {asset} issued by others", total - own.unwrap_or(0));
+                        if ledger::issued(c, &acct, asset).await? > 0 {
+                            bail!("you issue {asset}; it cannot also be your collateral");
                         }
-                        // Move the oldest lots not issued by the staker.
-                        let sa = stake_account(&acct);
-                        let mut left = amt;
-                        let lots: Vec<(Vec<u8>, i64)> = sqlx::query_as("select issuer, amount from balances where account = $1 and asset = $2 and issuer <> $1 order by issuer").bind(&acct).bind(asset).fetch_all(&mut *c).await?;
-                        for (issuer, have) in lots {
-                            if left <= 0 { break; }
-                            let take = left.min(have);
-                            sqlx::query("update balances set amount = amount - $4 where account = $1 and asset = $2 and issuer = $3").bind(&acct).bind(asset).bind(&issuer).bind(take).execute(&mut *c).await?;
-                            ledger::credit(c, &sa, asset, &issuer, take).await?;
-                            left -= take;
-                        }
-                        sqlx::query("delete from balances where account = $1 and asset = $2 and amount = 0").bind(&acct).bind(asset).execute(&mut *c).await?;
+                        ledger::transfer(c, &acct, &stake_account(&acct), asset, amt).await?;
                     }
                     events.push(ev("Stake", json!({"account": hex::encode(&acct), "asset": asset, "amount": amount})));
                 }
@@ -692,15 +738,13 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     if issued_v == 0 || stake_v * 10_000 >= issued_v * need {
                         bail!("this issuer is collateralized at the required {}%", need / 100);
                     }
-                    // Only this issuer's options count; they are destroyed and the issuer owes less.
-                    let own: Option<i64> = sqlx::query_scalar("select amount from balances where account = $1 and asset = $2 and issuer = $3").bind(&acct).bind(asset).bind(issuer).fetch_optional(&mut *c).await?;
+                    // Options are fungible: any holder's options are destroyed and this issuer owes less.
                     let q = i(*quantity)?;
-                    if own.unwrap_or(0) < q {
-                        bail!("you hold only {} {asset} from this issuer", own.unwrap_or(0));
-                    }
-                    sqlx::query("update balances set amount = amount - $4 where account = $1 and asset = $2 and issuer = $3").bind(&acct).bind(asset).bind(issuer).bind(q).execute(&mut *c).await?;
-                    sqlx::query("delete from balances where account = $1 and asset = $2 and issuer = $3 and amount = 0").bind(&acct).bind(asset).bind(issuer).execute(&mut *c).await?;
                     let issued = ledger::issued(c, issuer, asset).await?;
+                    if issued < q {
+                        bail!("this issuer has only {issued} {asset} outstanding");
+                    }
+                    ledger::debit(c, &acct, asset, q).await?;
                     ledger::set_issued(c, issuer, asset, issued - q).await?;
                     // Paid in BLRD from the stake at a premium over the oracle value.
                     let p_asset = oracle_price(c, asset, e.height).await?.ok_or_else(|| anyhow!("no price for {asset}"))? as i128;
@@ -722,13 +766,11 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                 TxBody::Burn { asset, quantity } => {
                     ledger::ensure_asset(asset)?;
                     let q = i(*quantity)?;
-                    let own: Option<i64> = sqlx::query_scalar("select amount from balances where account = $1 and asset = $2 and issuer = $1").bind(&acct).bind(asset).fetch_optional(&mut *c).await?;
-                    if own.unwrap_or(0) < q {
-                        bail!("you hold only {} of your own {asset} options", own.unwrap_or(0));
-                    }
-                    sqlx::query("update balances set amount = amount - $3 where account = $1 and asset = $2 and issuer = $1").bind(&acct).bind(asset).bind(q).execute(&mut *c).await?;
-                    sqlx::query("delete from balances where account = $1 and asset = $2 and amount = 0").bind(&acct).bind(asset).execute(&mut *c).await?;
                     let issued = ledger::issued(c, &acct, asset).await?;
+                    if issued < q {
+                        bail!("you have issued only {issued} {asset}");
+                    }
+                    ledger::debit(c, &acct, asset, q).await?;
                     ledger::set_issued(c, &acct, asset, issued - q).await?;
                     events.push(ev("Burn", json!({"issuer": hex::encode(&acct), "asset": asset, "quantity": quantity})));
                 }
@@ -769,9 +811,11 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     if receive_address.is_empty() {
                         bail!("receive_address is required");
                     }
-                    let lots = ledger::debit(c, &acct, asset, i(*quantity)?).await?;
+                    ledger::debit(c, &acct, asset, i(*quantity)?).await?;
+                    // Options are fungible, so the ledger decides who delivers: the thinnest-collateralized issuers first,
+                    // which works as a margin call, and each is called for no more than it has outstanding.
+                    let lots = assign_issuers(c, asset, i(*quantity)?, e.height).await?;
                     for (n, (issuer, q)) in lots.iter().enumerate() {
-                        // Reserve BLRD worth what these options are worth in dollars, at the oracle price.
                         let issued = ledger::issued(c, issuer, asset).await?;
                         ledger::set_issued(c, issuer, asset, issued - q).await?;
                         let mut idb = e.hash.to_vec();
@@ -913,7 +957,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                             // Minted now, against the maker's stake, free BLRD being staked as needed.
                             let issued = ledger::issued(c, &o.account, base.id).await?;
                             ledger::set_issued(c, &o.account, base.id, issued + qty).await?;
-                            ledger::credit(c, &o.id, base.id, &o.account, qty).await?;
+                            ledger::credit(c, &o.id, base.id, ledger::NO_ISSUER, qty).await?;
                             sqlx::query("update orders set escrow_left = escrow_left + $2 where id = $1").bind(&o.id).bind(qty).execute(&mut *c).await?;
                             auto_stake(c, &o.account, e.height).await?;
                             check_collateral(c, &o.account, e.height).await?;
@@ -1101,9 +1145,19 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
             if e.height < deadline {
                 bail!("delivery deadline {deadline} has not passed");
             }
-            // The reserved stake, BLRD and any staked options, goes to the exerciser.
+            // The reserved stake, BLRD and any staked options, goes to the exerciser; the other issuers cover any gap.
+            let p_asset = oracle_price(c, &m.maker_asset, e.height).await?.unwrap_or(0) as i128;
+            let p_blrd = oracle_price(c, BLRD, e.height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+            let owed = m.quantity as i128 * p_asset / PRICE_SCALE as i128;
+            let held: Option<i64> = sqlx::query_scalar("select sum(amount)::bigint from balances where account = $1").bind(&m.id).fetch_one(&mut *c).await?;
+            let lots_value = { let rows: Vec<(String, i64)> = sqlx::query_as("select asset, sum(amount)::bigint from balances where account = $1 group by asset").bind(&m.id).fetch_all(&mut *c).await?; let mut v: i128 = 0; for (asset, amt) in rows { v += amt as i128 * oracle_price(c, &asset, e.height).await?.unwrap_or(0) as i128 / PRICE_SCALE as i128; } v };
+            let _ = held;
             credit(c, &m.taker, m.bond).await?;
             move_all_lots(c, &m.id, &m.taker).await?;
+            let shortfall = owed - m.bond as i128 * p_blrd / PRICE_SCALE as i128 - lots_value;
+            if shortfall > 0 {
+                socialize_shortfall(c, &m.maker_asset, &m.maker, shortfall, &m.taker, e.height).await?;
+            }
             close_match(c, &m.id, "missed", "issuer did not deliver", seq).await?;
             events.push(ev("LegMissed", json!({"match": hex::encode(&m.id), "bond_to_exerciser": m.bond})));
         }

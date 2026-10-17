@@ -137,7 +137,7 @@ Each account has a currency: the asset it holds its balance in and wants to be p
 
 ## Options
 
-A balance on Bollard is not a coin. It is a quantity of options on a coin, each issued by a maker who holds the real coin off the ledger and has staked BLRD. The ledger tracks, for every account, how much of each asset it holds and from which issuer. Options from different issuers on the same asset are fungible for sending and trading; they differ only in who stands behind them, and the interface shows that.
+A balance on Bollard is not a coin. It is a quantity of options on a coin, issued by makers who hold the real coin off the ledger and have staked against it. Options on one asset are fungible: a balance does not remember who issued it, and one maker's bitcoin option is as good as another's. What the ledger tracks per maker is how much each has issued, and that is what its stake must cover.
 
 ### Staking and issuing
 
@@ -164,7 +164,7 @@ If BLRD doubles in a month, the ratio doubles to 300%, so a maker needs exactly 
 
 ### Liquidation
 
-When a maker falls under the required ratio, any holder of its options may liquidate: Liquidate(issuer, asset, quantity) destroys those options, reduces what the issuer owes, and pays the holder BLRD from the issuer's stake worth 110% of the options at oracle prices. Because the premium is paid from stake that covered more than 110%, the issuer's remaining position is never worse than 110% covered, and a maker that lets itself fall under the line is unwound by its own holders at a cost of ten percent. That is the enforcement, and it needs nobody's permission.
+When a maker falls under the required ratio, any holder of its options may liquidate: Liquidate(issuer, asset, quantity) destroys those options, reduces what the issuer owes, and pays the holder BLRD from the issuer's stake worth 110% of the options at oracle prices. Because the premium is paid from stake that covered more than 110%, the issuer's remaining position is never worse than 110% covered, and a maker that lets itself fall under the line is unwound by holders at a cost of ten percent. Since options are fungible, any holder of the asset may do it, and since a default would be shared by every issuer of that asset, every issuer has reason to. That is the enforcement, and it needs nobody's permission.
 
 ### Moving
 
@@ -172,7 +172,7 @@ Send(to, asset, amount) moves options from one account to another in one log ent
 
 ### Exercising
 
-Exercise(asset, quantity, receive address) burns options the holder has and opens a delivery match against their issuer, oldest issuer first. The issuer must pay the coin to the holder's address on its chain by the maker deadline. BLRD worth the options at oracle prices is reserved from the issuer's stake on the match: returned to the pool when the issuer delivers, paid to whoever else delivers, or paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.
+Exercise(asset, quantity, receive address) burns options the holder has and opens delivery matches against the makers that issue that asset. The ledger chooses who delivers: the thinnest-collateralized issuers first, each for no more than it has outstanding, which works as a standing margin call on whoever is closest to the line. The issuer must pay the coin to the holder's address on its chain by the maker deadline. BLRD worth the options at oracle prices is reserved from the issuer's stake on the match: returned to the pool when the issuer delivers, paid to whoever else delivers, or paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.
 
 ## Order book and matching
 
@@ -245,7 +245,7 @@ Coins move on chain in exactly two cases: a deposit, where a taker pays a maker 
 | Deposit: taker never posts a txid | Claim expires after 3 minutes; order reopens; any claim bond goes to the maker |
 | Deposit: payment not in a block by the taker deadline | Claim void; order reopens; any claim bond goes to the maker |
 | Deposit: payment in a block | Options released to the taker; match closed |
-| Exercise: delivery not deep by the maker deadline plus 2 blocks of grace | The reserved stake goes to the holder in full |
+| Exercise: delivery not deep by the maker deadline plus 2 blocks of grace | The reserved stake goes to the holder; if it was worth less than the coin owed, the other issuers of that asset make up the gap from their stakes in proportion to what they issued |
 | Exercise: delivery reorged out before it is deep | Counts as not delivered; same as the row above |
 | Exercise: delivery deep | Reserved stake, minus the fee, back to the issuer's pool, or to whoever else delivered; match closed |
 

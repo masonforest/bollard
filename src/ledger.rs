@@ -1,11 +1,16 @@
-//! Option balances: who holds how many delivery promises on which asset from
-//! which issuer. BLRD lives in `accounts`; everything else lives here. Lots
-//! are kept per issuer so an exercise knows whom to call on.
+//! Option balances: who holds how many delivery promises on which asset.
+//! BLRD lives in `accounts`; everything else lives here. Options of one asset
+//! are fungible: a balance does not remember who issued it. Who owes what is
+//! tracked per maker in `issuers`, and an exercise is assigned to makers by
+//! the ledger, thinnest collateral first.
 
 use anyhow::{anyhow, bail, Result};
 use sqlx::PgConnection;
 
-/// Credit `amount` of `asset` issued by `issuer` to `account`.
+/// Every balance carries this empty issuer; the column stays so old logs replay.
+pub const NO_ISSUER: &[u8] = &[];
+
+/// Credit `amount` of `asset` to `account`.
 pub async fn credit(c: &mut PgConnection, account: &[u8], asset: &str, issuer: &[u8], amount: i64) -> Result<()> {
     if amount == 0 {
         return Ok(());
