@@ -267,6 +267,7 @@ const forms = {
       left = (usd * 100000000n) / BigInt(Math.round(state.btcPrice));
     } else left = toAtoms(form.amount.value, asset);
     if (left <= 0n) throw new Error('Enter an amount.');
+    if (left < BigInt(a.min_quantity)) throw new Error(`The smallest ${a.symbol} deposit is ${money(a.min_quantity, asset)}${asset === 'btc:BTC' && state.btcPrice ? ` (about ${money((BigInt(a.min_quantity) * BigInt(Math.round(state.btcPrice))) / 100000000n, 'eth:USDC')})` : ''}.`);
     const exits = ((await j(`/book?market=${encodeURIComponent(asset + '/' + asset)}`)).deposits || []).filter((o) => o.account !== me());
     if (!exits.length) throw new Error(`No maker is selling ${a.symbol} for on-chain ${a.symbol} right now.`);
     const pays = [];
@@ -278,7 +279,7 @@ const forms = {
       const m = (await j(`/matches?account=${me()}&kind=deposit&limit=5`)).find((x) => x.id === out.hash);
       if (m) { pays.push(m); left -= take; }
     }
-    if (!pays.length) throw new Error('Nothing could be taken; try a smaller amount.');
+    if (!pays.length) throw new Error(`Only ${money(exits.reduce((n, o) => n + BigInt(o.qty_left), 0n), asset)} of ${a.symbol} is on offer right now; try that or less.`);
     d.pays = pays; d.short = left > 0n ? left : null;
     d.before = balanceOf(asset); d.watching = true; render(); watchDeposit();
     if (a.chain === 'eth' && hasEthWallet()) {
