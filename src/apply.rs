@@ -95,11 +95,15 @@ async fn account_full(c: &mut PgConnection, pk: &[u8]) -> Result<(i64, i64, i64,
     Ok(r)
 }
 
-/// Which makers deliver an exercise of `quantity` of `asset`: issuers of that
-/// asset ordered by collateral ratio, thinnest first, each for at most what it
-/// has outstanding.
-async fn assign_issuers(c: &mut PgConnection, asset: &str, quantity: i64, height: u32) -> Result<Vec<(Vec<u8>, i64)>> {
+/// Who delivers an exercise of `quantity` of `asset`: the thinnest-collateralized
+/// issuer with that much outstanding, else the largest issuer. Returns it and the
+/// (issuer, quantity) shares it must take over from the others, thinnest first.
+async fn assign_deliverer(c: &mut PgConnection, asset: &str, quantity: i64, height: u32) -> Result<(Vec<u8>, Vec<(Vec<u8>, i64)>)> {
     let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0").bind(asset).fetch_all(&mut *c).await?;
+    let total: i64 = rows.iter().map(|r| r.1).sum();
+    if total < quantity {
+        bail!("only {total} {asset} is outstanding across all issuers");
+    }
     let mut ranked = Vec::new();
     for (acct, issued) in rows {
         let iv = issued_value(c, &acct, height).await.unwrap_or(1).max(1);
@@ -107,20 +111,25 @@ async fn assign_issuers(c: &mut PgConnection, asset: &str, quantity: i64, height
         ranked.push((sv * 1_000_000 / iv, acct, issued));
     }
     ranked.sort();
-    let mut left = quantity;
-    let mut out = Vec::new();
+    let deliverer = match ranked.iter().find(|r| r.2 >= quantity) {
+        Some(r) => r.1.clone(),
+        None => ranked.iter().max_by_key(|r| r.2).map(|r| r.1.clone()).expect("issuers"),
+    };
+    let own = ranked.iter().find(|r| r.1 == deliverer).map(|r| r.2).unwrap_or(0);
+    let mut left = quantity - own;
+    let mut taken = Vec::new();
     for (_, acct, issued) in ranked {
         if left <= 0 {
             break;
         }
+        if acct == deliverer {
+            continue;
+        }
         let take = left.min(issued);
-        out.push((acct, take));
+        taken.push((acct, take));
         left -= take;
     }
-    if left > 0 {
-        bail!("no issuer is left to deliver {left} {asset}");
-    }
-    Ok(out)
+    Ok((deliverer, taken))
 }
 
 /// When a maker's reserved stake did not cover what it owed, the other issuers
@@ -814,32 +823,52 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         bail!("receive_address is required");
                     }
                     ledger::debit(c, &acct, asset, i(*quantity)?).await?;
-                    // Options are fungible, so the ledger decides who delivers: the thinnest-collateralized issuers first,
-                    // which works as a margin call, and each is called for no more than it has outstanding.
-                    let lots = assign_issuers(c, asset, i(*quantity)?, e.height).await?;
-                    for (n, (issuer, q)) in lots.iter().enumerate() {
-                        let issued = ledger::issued(c, issuer, asset).await?;
-                        ledger::set_issued(c, issuer, asset, issued - q).await?;
-                        let mut idb = e.hash.to_vec();
-                        idb.extend_from_slice(&(n as u32).to_be_bytes());
-                        let id = crate::crypto::sha256(&idb).to_vec();
-                        let bond = reserve_stake_worth(c, issuer, &id, asset, *q, e.height).await?;
-                        sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise')")
-                            .bind(&id)
-                            .bind(seq as i64)
-                            .bind(issuer)
-                            .bind(&acct)
-                            .bind(asset)
-                            .bind(*q)
-                            .bind(bond)
-                            .bind(a.chain)
-                            .bind(receive_address)
-                            .bind(e.time as i64)
-                            .bind(e.height as i32)
-                            .execute(&mut *c)
-                            .await?;
-                        events.push(ev("Exercise", json!({"match": hex::encode(&id), "account": hex::encode(&acct), "issuer": hex::encode(issuer), "asset": asset, "quantity": q, "bond": bond, "to": receive_address})));
+                    // Options are fungible, so the ledger decides who delivers, and one maker delivers the lot:
+                    // the thinnest issuer that has enough outstanding, else the largest. Whatever the deliverer
+                    // did not issue itself it takes over from the other issuers, who pay it for that in BLRD
+                    // from their stakes at the oracle price. The holder gets a single payment.
+                    let q = i(*quantity)?;
+                    let (deliverer, taken_over) = assign_deliverer(c, asset, q, e.height).await?;
+                    let p_asset = oracle_price(c, asset, e.height).await?.unwrap_or(0) as i128;
+                    let p_blrd = oracle_price(c, BLRD, e.height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+                    for (other, part) in &taken_over {
+                        let oi = ledger::issued(c, other, asset).await?;
+                        ledger::set_issued(c, other, asset, oi - part).await?;
+                        let di = ledger::issued(c, &deliverer, asset).await?;
+                        ledger::set_issued(c, &deliverer, asset, di + part).await?;
+                        // The other maker pays the deliverer, stake to stake, what that share is worth.
+                        let value = *part as i128 * p_asset / PRICE_SCALE as i128;
+                        let want = (value * PRICE_SCALE as i128 / p_blrd.max(1)) as i64;
+                        let (_, _, _, st, un, _) = account_full(c, other).await?;
+                        let blrd = want.min(st + un);
+                        let from_st = blrd.min(st);
+                        sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(other).bind(from_st).bind(blrd - from_st).execute(&mut *c).await?;
+                        sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&deliverer).bind(blrd).execute(&mut *c).await?;
+                        let rest = value - blrd as i128 * p_blrd / PRICE_SCALE as i128;
+                        if rest > 0 {
+                            pay_from_staked_lots(c, other, &stake_account(&deliverer), rest, e.height).await?;
+                        }
+                        events.push(ev("ObligationMoved", json!({"asset": asset, "from": hex::encode(other), "to": hex::encode(&deliverer), "quantity": part, "paid_blrd": blrd})));
                     }
+                    let issued = ledger::issued(c, &deliverer, asset).await?;
+                    ledger::set_issued(c, &deliverer, asset, issued - q).await?;
+                    let id = e.hash.to_vec();
+                    let bond = reserve_stake_worth(c, &deliverer, &id, asset, q, e.height).await?;
+                    sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise')")
+                        .bind(&id)
+                        .bind(seq as i64)
+                        .bind(&deliverer)
+                        .bind(&acct)
+                        .bind(asset)
+                        .bind(q)
+                        .bind(bond)
+                        .bind(a.chain)
+                        .bind(receive_address)
+                        .bind(e.time as i64)
+                        .bind(e.height as i32)
+                        .execute(&mut *c)
+                        .await?;
+                    events.push(ev("Exercise", json!({"match": hex::encode(&id), "account": hex::encode(&acct), "issuer": hex::encode(&deliverer), "asset": asset, "quantity": q, "bond": bond, "to": receive_address})));
                 }
 
                 TxBody::PlaceOrder { market, side, quantity, price, bond: _, claim_bond, fill_policy, receive_address, expiry_height, settle, mint } => {
