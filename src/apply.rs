@@ -95,10 +95,10 @@ async fn account_full(c: &mut PgConnection, pk: &[u8]) -> Result<(i64, i64, i64,
     Ok(r)
 }
 
-/// Who delivers an exercise of `quantity` of `asset`: the best-collateralized
-/// issuer with that much outstanding, the one most able to pay, else the
-/// largest issuer. Returns it and the (issuer, quantity) shares it takes over
-/// from the others, thinnest first.
+/// Who delivers an exercise of `quantity` of `asset`: the thinnest-collateralized
+/// issuer that can cover the whole thing on its own, so delivery doubles as a
+/// margin call while the holder still gets one payment; else the largest issuer.
+/// Returns it and the (issuer, quantity) shares it takes over from the others.
 async fn assign_deliverer(c: &mut PgConnection, asset: &str, quantity: i64, height: u32) -> Result<(Vec<u8>, Vec<(Vec<u8>, i64)>)> {
     let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0").bind(asset).fetch_all(&mut *c).await?;
     let total: i64 = rows.iter().map(|r| r.1).sum();
@@ -112,7 +112,7 @@ async fn assign_deliverer(c: &mut PgConnection, asset: &str, quantity: i64, heig
         ranked.push((sv * 1_000_000 / iv, acct, issued));
     }
     ranked.sort();
-    let deliverer = match ranked.iter().rev().find(|r| r.2 >= quantity) {
+    let deliverer = match ranked.iter().find(|r| r.2 >= quantity) {
         Some(r) => r.1.clone(),
         None => ranked.iter().max_by_key(|r| r.2).map(|r| r.1.clone()).expect("issuers"),
     };
