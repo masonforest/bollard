@@ -95,9 +95,10 @@ async fn account_full(c: &mut PgConnection, pk: &[u8]) -> Result<(i64, i64, i64,
     Ok(r)
 }
 
-/// Who delivers an exercise of `quantity` of `asset`: the thinnest-collateralized
-/// issuer with that much outstanding, else the largest issuer. Returns it and the
-/// (issuer, quantity) shares it must take over from the others, thinnest first.
+/// Who delivers an exercise of `quantity` of `asset`: the best-collateralized
+/// issuer with that much outstanding, the one most able to pay, else the
+/// largest issuer. Returns it and the (issuer, quantity) shares it takes over
+/// from the others, thinnest first.
 async fn assign_deliverer(c: &mut PgConnection, asset: &str, quantity: i64, height: u32) -> Result<(Vec<u8>, Vec<(Vec<u8>, i64)>)> {
     let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0").bind(asset).fetch_all(&mut *c).await?;
     let total: i64 = rows.iter().map(|r| r.1).sum();
@@ -111,7 +112,7 @@ async fn assign_deliverer(c: &mut PgConnection, asset: &str, quantity: i64, heig
         ranked.push((sv * 1_000_000 / iv, acct, issued));
     }
     ranked.sort();
-    let deliverer = match ranked.iter().find(|r| r.2 >= quantity) {
+    let deliverer = match ranked.iter().rev().find(|r| r.2 >= quantity) {
         Some(r) => r.1.clone(),
         None => ranked.iter().max_by_key(|r| r.2).map(|r| r.1.clone()).expect("issuers"),
     };
@@ -831,28 +832,21 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     let (deliverer, taken_over) = assign_deliverer(c, asset, q, e.height).await?;
                     let p_asset = oracle_price(c, asset, e.height).await?.unwrap_or(0) as i128;
                     let p_blrd = oracle_price(c, BLRD, e.height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+                    let id = e.hash.to_vec();
                     for (other, part) in &taken_over {
+                        // The obligation moves now, so the deliverer's stake backs the whole exercise at once.
+                        // The payment for it waits until the holder has been paid and the delivery is deep.
                         let oi = ledger::issued(c, other, asset).await?;
                         ledger::set_issued(c, other, asset, oi - part).await?;
                         let di = ledger::issued(c, &deliverer, asset).await?;
                         ledger::set_issued(c, &deliverer, asset, di + part).await?;
-                        // The other maker pays the deliverer, stake to stake, what that share is worth.
                         let value = *part as i128 * p_asset / PRICE_SCALE as i128;
-                        let want = (value * PRICE_SCALE as i128 / p_blrd.max(1)) as i64;
-                        let (_, _, _, st, un, _) = account_full(c, other).await?;
-                        let blrd = want.min(st + un);
-                        let from_st = blrd.min(st);
-                        sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(other).bind(from_st).bind(blrd - from_st).execute(&mut *c).await?;
-                        sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&deliverer).bind(blrd).execute(&mut *c).await?;
-                        let rest = value - blrd as i128 * p_blrd / PRICE_SCALE as i128;
-                        if rest > 0 {
-                            pay_from_staked_lots(c, other, &stake_account(&deliverer), rest, e.height).await?;
-                        }
-                        events.push(ev("ObligationMoved", json!({"asset": asset, "from": hex::encode(other), "to": hex::encode(&deliverer), "quantity": part, "paid_blrd": blrd})));
+                        sqlx::query("insert into exercise_shares (match_id, issuer, quantity, value) values ($1, $2, $3, $4)").bind(&id).bind(other).bind(*part).bind(value as i64).execute(&mut *c).await?;
+                        events.push(ev("ObligationMoved", json!({"asset": asset, "from": hex::encode(other), "to": hex::encode(&deliverer), "quantity": part, "value_usdc": value as i64})));
                     }
+                    let _ = p_blrd;
                     let issued = ledger::issued(c, &deliverer, asset).await?;
                     ledger::set_issued(c, &deliverer, asset, issued - q).await?;
-                    let id = e.hash.to_vec();
                     let bond = reserve_stake_worth(c, &deliverer, &id, asset, q, e.height).await?;
                     sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise')")
                         .bind(&id)
@@ -1189,6 +1183,8 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
             if shortfall > 0 {
                 socialize_shortfall(c, &m.maker_asset, &m.maker, shortfall, &m.taker, e.height).await?;
             }
+            // A deliverer that failed is not paid for the shares it took over.
+            sqlx::query("delete from exercise_shares where match_id = $1").bind(&m.id).execute(&mut *c).await?;
             close_match(c, &m.id, "missed", "issuer did not deliver", seq).await?;
             events.push(ev("LegMissed", json!({"match": hex::encode(&m.id), "bond_to_exerciser": m.bond})));
         }
@@ -1212,6 +1208,27 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                 move_all_lots(c, &m.id, &payer).await?;
             }
             credit(c, &e.leader, fee).await?;
+            // Now that the holder has been paid, the other issuers pay the deliverer for the shares it took over.
+            let shares: Vec<(Vec<u8>, i64, i64)> = sqlx::query_as("select issuer, quantity, value from exercise_shares where match_id = $1").bind(&m.id).fetch_all(&mut *c).await?;
+            let p_blrd = oracle_price(c, BLRD, e.height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+            for (issuer, _qty, value) in shares {
+                let want = (value as i128 * PRICE_SCALE as i128 / p_blrd.max(1)) as i64;
+                let (_, _, _, st, un, _) = account_full(c, &issuer).await?;
+                let blrd = want.min(st + un);
+                let from_st = blrd.min(st);
+                sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(&issuer).bind(from_st).bind(blrd - from_st).execute(&mut *c).await?;
+                if payer == m.maker {
+                    sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&payer).bind(blrd).execute(&mut *c).await?;
+                } else {
+                    credit(c, &payer, blrd).await?;
+                }
+                let rest = value as i128 - blrd as i128 * p_blrd / PRICE_SCALE as i128;
+                if rest > 0 {
+                    let to = if payer == m.maker { stake_account(&payer) } else { payer.clone() };
+                    pay_from_staked_lots(c, &issuer, &to, rest, e.height).await?;
+                }
+            }
+            sqlx::query("delete from exercise_shares where match_id = $1").bind(&m.id).execute(&mut *c).await?;
             close_match(c, &m.id, "closed", "delivered", seq).await?;
             events.push(ev("MatchClosed", json!({"match": hex::encode(&m.id), "bond_to": hex::encode(&payer), "fee": fee})));
         }
@@ -1284,7 +1301,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
 
 /// Wipe derived state so the log can be replayed.
 pub async fn reset_state(c: &mut PgConnection) -> Result<()> {
-    sqlx::query("truncate accounts, orders, matches, balances, issuers, transfers").execute(&mut *c).await?;
+    sqlx::query("truncate accounts, orders, matches, balances, issuers, transfers, exercise_shares").execute(&mut *c).await?;
     sqlx::query("update epochs set leader_key = null, first_seq = null, last_seq = null").execute(c).await?;
     Ok(())
 }
