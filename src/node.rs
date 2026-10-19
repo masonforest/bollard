@@ -385,6 +385,27 @@ impl Node {
         .await?;
         for (h, txid) in missing {
             self.append_at(h as u32, Body::EpochStart { height: h as u32, entry_txid: txid.unwrap_or_default() }).await?;
+            self.liquidate_underwater(h as u32).await?;
+        }
+        Ok(())
+    }
+
+    /// The per-block check: any issuer under the hard floor is liquidated by assertion.
+    async fn liquidate_underwater(&self, height: u32) -> Result<()> {
+        let issuers: Vec<(Vec<u8>,)> = sqlx::query_as("select distinct account from issuers where issued > 0").fetch_all(&self.db).await?;
+        for (issuer,) in issuers {
+            let under = {
+                let mut c = self.db.acquire().await?;
+                let issued = apply::issued_value(&mut c, &issuer, height).await.unwrap_or(0);
+                let stake = apply::stake_value(&mut c, &issuer, height).await?;
+                issued > 0 && stake * 10_000 < issued * apply::LIQUIDATION_FLOOR_BPS
+            };
+            if under {
+                tracing::warn!(issuer = %hex::encode(&issuer), "issuer under the liquidation floor; liquidating");
+                if let Err(e) = self.append_at(height, Body::Liquidated { issuer: issuer.clone() }).await {
+                    tracing::warn!("liquidation failed: {e}");
+                }
+            }
         }
         Ok(())
     }

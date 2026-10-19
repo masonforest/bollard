@@ -100,7 +100,7 @@ The leader is a sequencer: it takes signed transactions over the network, orders
 ### Kinds
 
 - User-signed: Transfer, Stake, Unstake, Mint, Burn, Liquidate, Send, SetCurrency, PlaceOrder, CancelOrder, Claim, ReportPayment, Exercise.
-- Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (returns or slashes the reserved stake), Handoff (reason, replaced leader).
+- Leader-asserted: EpochStart (height, entry txid; mints the reward), ClaimExpired (claim), LegIncluded (leg, txid, block hash, height), ClaimVoid (claim), LegMissed (leg), MatchClosed (returns or slashes the reserved stake), Liquidated (issuer), Handoff (reason, replaced leader).
 
 Rule: every leader-asserted entry must be checkable by any node from Bitcoin, the external chains and prior state. A follower that finds one false treats the log as invalid from that entry on.
 
@@ -165,6 +165,8 @@ If BLRD doubles in a month, the ratio doubles to 300%, so a maker needs exactly 
 ### Liquidation
 
 When a maker falls under the required ratio, any holder of its options may liquidate: Liquidate(issuer, asset, quantity) destroys those options, reduces what the issuer owes, and pays the holder BLRD from the issuer's stake worth 110% of the options at oracle prices. Because the premium is paid from stake that covered more than 110%, the issuer's remaining position is never worse than 110% covered, and a maker that lets itself fall under the line is unwound by holders at a cost of ten percent. Since options are fungible, any holder of the asset may do it, and since a default would be shared by every issuer of that asset, every issuer has reason to. That is the enforcement, and it needs nobody's permission.
+
+Below a hard floor of 110% the ledger does not wait for holders. At every Bitcoin block the leader checks every issuer, and asserts Liquidated for any that is under the floor; every follower checks the same arithmetic from its own state, so a false assertion invalidates the log like any other. The liquidated maker's outstanding options pass to the other issuers of each asset, as much as their spare capacity allows, and its entire stake follows the debt in the same proportion. Holders notice nothing: their options are fungible and now stand behind healthier makers. Whatever no other issuer can absorb stays with the defaulter, to be settled by exercise and the shortfall sharing above.
 
 ### Moving
 
@@ -340,6 +342,7 @@ Starting values for v1; all fixed per software version.
 | Unstake delay | 144 blocks | Stake cannot leave ahead of a default it should pay for |
 | Collateral ratio | 150%, times daily/monthly BLRD price when above 1 | A rally never loosens collateral; a fall tightens it |
 | Liquidation premium | 110% of oracle value, in BLRD | Holders unwind a thin maker themselves |
+| Liquidation floor | 110% | Under it the leader liquidates at the next block; debt and stake pass to the other issuers |
 | Oracle windows | 144 blocks, then 4,320 | A day of fills, a month as the fallback |
 | Genesis BLRD price | $1 | Used only until BLRD/USDC has traded |
 | Grace G | 2 blocks | One censoring leader cannot cause a default |

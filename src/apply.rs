@@ -43,6 +43,8 @@ pub fn genesis_price(asset: &str) -> Option<i64> {
 pub const BASE_RATIO_BPS: i128 = 15_000;
 /// Under the required ratio, holders may redeem the issuer's options from its stake at this premium.
 pub const LIQUIDATION_PREMIUM_BPS: i128 = 11_000;
+/// The hard floor: under this, the leader liquidates the issuer at the next block.
+pub const LIQUIDATION_FLOOR_BPS: i128 = 11_000;
 pub const BLRD: &str = "BLRD";
 
 pub fn subsidy(height: u32) -> u64 {
@@ -1183,6 +1185,65 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
             credit(c, &e.leader, fee).await?;
             close_match(c, &m.id, "closed", "delivered", seq).await?;
             events.push(ev("MatchClosed", json!({"match": hex::encode(&m.id), "bond_to": hex::encode(&payer), "fee": fee})));
+        }
+
+        Body::Liquidated { issuer } => {
+            // Checkable by every node from state alone: the issuer must be under the floor.
+            let issued = issued_value(c, issuer, e.height).await?;
+            let stake = stake_value(c, issuer, e.height).await?;
+            if issued == 0 || stake * 10_000 >= issued * LIQUIDATION_FLOOR_BPS {
+                bail!("issuer is not under the liquidation floor");
+            }
+            let height = e.height;
+            let need = required_ratio_bps(c, height).await?;
+            let p_blrd = oracle_price(c, BLRD, height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
+            let (_, _, _, staked, unstaking, _) = account_full(c, issuer).await?;
+            let stake_blrd = staked + unstaking;
+            let mut moved = Vec::new();
+            // Each asset's outstanding options pass to that asset's other issuers, up to their spare capacity,
+            // and the defaulter's stake follows in the same proportion. Anything nobody can absorb stays with
+            // the defaulter, to be settled by exercise and shortfall sharing.
+            let assets: Vec<(String, i64)> = sqlx::query_as("select asset, issued from issuers where account = $1 and issued > 0").bind(issuer).fetch_all(&mut *c).await?;
+            let total_value = issued.max(1);
+            for (asset, outstanding) in assets {
+                let p_asset = oracle_price(c, &asset, height).await?.unwrap_or(0) as i128;
+                let others: Vec<(Vec<u8>, i64)> = sqlx::query_as("select account, issued from issuers where asset = $1 and issued > 0 and account <> $2").bind(&asset).bind(issuer).fetch_all(&mut *c).await?;
+                let mut left = outstanding;
+                for (other, _) in others {
+                    if left <= 0 {
+                        break;
+                    }
+                    let ov = issued_value(c, &other, height).await.unwrap_or(0);
+                    let sv = stake_value(c, &other, height).await?;
+                    let cap_value = (sv * 10_000 / need - ov).max(0);
+                    let cap_qty = if p_asset > 0 { (cap_value * PRICE_SCALE as i128 / p_asset) as i64 } else { 0 };
+                    let take = left.min(cap_qty);
+                    if take <= 0 {
+                        continue;
+                    }
+                    let oi = ledger::issued(c, &other, &asset).await?;
+                    ledger::set_issued(c, &other, &asset, oi + take).await?;
+                    left -= take;
+                    // The defaulter's stake travels with the debt, in proportion to its value.
+                    let share_value = take as i128 * p_asset / PRICE_SCALE as i128;
+                    let blrd = (stake_blrd as i128 * share_value / total_value).min(stake_blrd as i128) as i64;
+                    if blrd > 0 {
+                        let (_, _, _, st, un, _) = account_full(c, issuer).await?;
+                        let b = blrd.min(st + un);
+                        let from_st = b.min(st);
+                        sqlx::query("update accounts set staked = staked - $2, unstaking = unstaking - $3 where pubkey = $1").bind(issuer).bind(from_st).bind(b - from_st).execute(&mut *c).await?;
+                        sqlx::query("update accounts set staked = staked + $2 where pubkey = $1").bind(&other).bind(b).execute(&mut *c).await?;
+                    }
+                    let lots_value = staked_lots_value(c, issuer, height).await?;
+                    if lots_value > 0 {
+                        pay_from_staked_lots(c, issuer, &stake_account(&other), lots_value * share_value / total_value, height).await?;
+                    }
+                    moved.push(json!({"asset": asset, "to": hex::encode(&other), "quantity": take, "blrd": blrd}));
+                }
+                let si = ledger::issued(c, issuer, &asset).await?;
+                ledger::set_issued(c, issuer, &asset, si - (outstanding - left)).await?;
+            }
+            events.push(ev("Liquidated", json!({"issuer": hex::encode(issuer), "moved": moved, "price_blrd": p_blrd as i64})));
         }
 
         Body::Handoff { reason, replaced } => {

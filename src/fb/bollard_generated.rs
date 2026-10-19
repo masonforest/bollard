@@ -151,10 +151,10 @@ pub struct TxBodyUnionTableOffset {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_ENTRY_BODY: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_ENTRY_BODY: u8 = 8;
+pub const ENUM_MAX_ENTRY_BODY: u8 = 9;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 9] = [
+pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 10] = [
   EntryBody::NONE,
   EntryBody::SignedTx,
   EntryBody::EpochStart,
@@ -164,6 +164,7 @@ pub const ENUM_VALUES_ENTRY_BODY: [EntryBody; 9] = [
   EntryBody::LegMissed,
   EntryBody::MatchClosed,
   EntryBody::Handoff,
+  EntryBody::Liquidated,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -180,9 +181,10 @@ impl EntryBody {
   pub const LegMissed: Self = Self(6);
   pub const MatchClosed: Self = Self(7);
   pub const Handoff: Self = Self(8);
+  pub const Liquidated: Self = Self(9);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 8;
+  pub const ENUM_MAX: u8 = 9;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::SignedTx,
@@ -193,6 +195,7 @@ impl EntryBody {
     Self::LegMissed,
     Self::MatchClosed,
     Self::Handoff,
+    Self::Liquidated,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -206,6 +209,7 @@ impl EntryBody {
       Self::LegMissed => Some("LegMissed"),
       Self::MatchClosed => Some("MatchClosed"),
       Self::Handoff => Some("Handoff"),
+      Self::Liquidated => Some("Liquidated"),
       _ => None,
     }
   }
@@ -3489,6 +3493,102 @@ impl ::core::fmt::Debug for Handoff<'_> {
       ds.finish()
   }
 }
+pub enum LiquidatedOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Liquidated<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
+
+impl<'a> ::flatbuffers::Follow<'a> for Liquidated<'a> {
+  type Inner = Liquidated<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> Liquidated<'a> {
+  pub const VT_ISSUER: ::flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Liquidated { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args LiquidatedArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<Liquidated<'bldr>> {
+    let mut builder = LiquidatedBuilder::new(_fbb);
+    if let Some(x) = args.issuer { builder.add_issuer(x); }
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn issuer(&self) -> Option<::flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u8>>>(Liquidated::VT_ISSUER, None)}
+  }
+}
+
+impl ::flatbuffers::Verifiable for Liquidated<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u8>>>("issuer", Self::VT_ISSUER, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct LiquidatedArgs<'a> {
+    pub issuer: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u8>>>,
+}
+impl<'a> Default for LiquidatedArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    LiquidatedArgs {
+      issuer: None,
+    }
+  }
+}
+
+pub struct LiquidatedBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> LiquidatedBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_issuer(&mut self, issuer: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Liquidated::VT_ISSUER, issuer);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> LiquidatedBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    LiquidatedBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Liquidated<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for Liquidated<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Liquidated");
+      ds.field("issuer", &self.issuer());
+      ds.finish()
+  }
+}
 pub enum EntryContentOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -3703,6 +3803,21 @@ impl<'a> EntryContent<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn body_as_liquidated(&self) -> Option<Liquidated<'a>> {
+    if self.body_type() == EntryBody::Liquidated {
+      self.body().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { Liquidated::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl ::flatbuffers::Verifiable for EntryContent<'_> {
@@ -3725,6 +3840,7 @@ impl ::flatbuffers::Verifiable for EntryContent<'_> {
           EntryBody::LegMissed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<LegMissed>>("EntryBody::LegMissed", pos),
           EntryBody::MatchClosed => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<MatchClosed>>("EntryBody::MatchClosed", pos),
           EntryBody::Handoff => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Handoff>>("EntryBody::Handoff", pos),
+          EntryBody::Liquidated => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Liquidated>>("EntryBody::Liquidated", pos),
           _ => Ok(()),
         }
      })?
@@ -3865,6 +3981,13 @@ impl ::core::fmt::Debug for EntryContent<'_> {
         },
         EntryBody::Handoff => {
           if let Some(x) = self.body_as_handoff() {
+            ds.field("body", &x)
+          } else {
+            ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        EntryBody::Liquidated => {
+          if let Some(x) = self.body_as_liquidated() {
             ds.field("body", &x)
           } else {
             ds.field("body", &"InvalidFlatbuffer: Union discriminant does not match value.")

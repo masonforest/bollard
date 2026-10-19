@@ -102,6 +102,7 @@ pub enum Body {
     LegMissed { #[serde(serialize_with = "hex_bytes")] match_id: [u8; 32], leg: u8 },
     MatchClosed { #[serde(serialize_with = "hex_bytes")] match_id: [u8; 32] },
     Handoff { reason: String, #[serde(serialize_with = "hex_bytes")] replaced: Vec<u8> },
+    Liquidated { #[serde(serialize_with = "hex_bytes")] issuer: Vec<u8> },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -148,6 +149,7 @@ impl ParsedEntry {
             Body::LegMissed { .. } => "LegMissed",
             Body::MatchClosed { .. } => "MatchClosed",
             Body::Handoff { .. } => "Handoff",
+            Body::Liquidated { .. } => "Liquidated",
         }
     }
 }
@@ -402,6 +404,10 @@ pub fn build_entry_content(seq: u64, prev: &[u8; 32], height: u32, time: u64, le
             let rp = b.create_vector(replaced);
             (fb::EntryBody::Handoff, fb::Handoff::create(&mut b, &fb::HandoffArgs { reason: Some(r), replaced: Some(rp) }).as_union_value())
         }
+        Body::Liquidated { issuer } => {
+            let i = b.create_vector(issuer);
+            (fb::EntryBody::Liquidated, fb::Liquidated::create(&mut b, &fb::LiquidatedArgs { issuer: Some(i) }).as_union_value())
+        }
     };
     let args = fb::EntryContentArgs { seq, prev: Some(prev), height, time, body_type: bt, body: Some(bo), leader: Some(leader_v) };
     let c = fb::EntryContent::create(&mut b, &args);
@@ -469,6 +475,10 @@ pub fn parse_entry(buf: &[u8]) -> Result<ParsedEntry> {
         fb::EntryBody::Handoff => {
             let t = c.body_as_handoff().ok_or_else(|| anyhow!("bad Handoff"))?;
             Body::Handoff { reason: t.reason().unwrap_or("").to_string(), replaced: bytes(t.replaced()).to_vec() }
+        }
+        fb::EntryBody::Liquidated => {
+            let t = c.body_as_liquidated().ok_or_else(|| anyhow!("bad Liquidated"))?;
+            Body::Liquidated { issuer: bytes(t.issuer()).to_vec() }
         }
         _ => bail!("unknown entry body"),
     };

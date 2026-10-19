@@ -76,8 +76,11 @@ table ClaimVoid   { match_id: [ubyte]; reason: ubyte; }   // 1 = taker deadline,
 table LegMissed   { match_id: [ubyte]; leg: ubyte; }
 table MatchClosed { match_id: [ubyte]; }
 table Handoff     { reason: string; replaced: [ubyte]; }
+// Asserted each block for an issuer whose stake fell under the hard floor: its
+// issuance and its whole stake pass to the other issuers of each asset.
+table Liquidated  { issuer: [ubyte]; }
 
-union EntryBody { SignedTx, EpochStart, ClaimExpired, LegIncluded, ClaimVoid, LegMissed, MatchClosed, Handoff }
+union EntryBody { SignedTx, EpochStart, ClaimExpired, LegIncluded, ClaimVoid, LegMissed, MatchClosed, Handoff, Liquidated }
 
 table EntryContent {
   seq: uint64;
