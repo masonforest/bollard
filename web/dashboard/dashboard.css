@@ -122,4 +122,6 @@ body.embedded main.wide { padding-top: 16px; }
 .seg.small { margin: 0 0 0 6px; padding: 2px; }
 .seg.small button { font-size: 13px; padding: 4px 12px; font-weight: 500; }
 #d-qr svg { width: 120px; display: block; background: #fff; border-radius: 6px; }
-.swap-unit { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--line); color: var(--fg); font-size: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-left: 8px; }
+.swap-unit { height: 36px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 0 12px 0 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex: none; margin-left: 8px; white-space: nowrap; }
+.swap-unit:hover { border-color: var(--accent); color: var(--accent); }
+.swap-unit .sw-ic { font-size: 15px; }

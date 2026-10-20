@@ -174,7 +174,7 @@ function setSide(v) { side = v; $('s-buy').classList.toggle('on', v === 'buy'); 
 $('s-buy').onclick = () => setSide('buy'); $('s-sell').onclick = () => setSide('sell');
 $('s-amount').addEventListener('input', scheduleSimple);
 // Type the amount in dollars or in the coin; the book converts either way.
-let unitUsd = false;
+let unitUsd = true;
 $('s-swap').onclick = () => { unitUsd = !unitUsd; computeSimple(); };
 $('s-asset').addEventListener('input', scheduleSimple);
 function scheduleSimple() { clearTimeout(simpleTimer); simpleTimer = setTimeout(computeSimple, 200); }
@@ -185,6 +185,9 @@ async function computeSimple() {
   const asset = $('s-asset').value; const a = assets[asset]; if (!a) return;
   $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`;
   $('s-prefix').classList.toggle('hidden', !unitUsd); $('s-unit').textContent = unitUsd ? '' : a.symbol; $('s-amount').placeholder = unitUsd ? '0.00' : '0.0';
+  // The switcher says what it will switch to.
+  $('s-swap').innerHTML = unitUsd ? `<span class="sw-ic">⇅</span>${a.symbol}` : `<span class="sw-ic">⇅</span>USD`;
+  $('s-swap').title = unitUsd ? `Enter the amount in ${a.symbol} instead` : 'Enter the amount in dollars instead';
   let qty = 0n, dollars = 0n;
   try { if (unitUsd) dollars = toAtoms($('s-amount').value || '0', USDC); else qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
   if (qty <= 0n && dollars <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
