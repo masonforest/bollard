@@ -76,6 +76,7 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .optrow .sub { color: var(--muted); font-size: 13px; }
 .optrow .chev { color: var(--muted); font-size: 26px; line-height: 1; }
 .back { font-size: 15px; color: var(--muted); margin-bottom: 14px; align-self: flex-start; }
+.maxlink { font-size: inherit; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; }
 .curpill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 6px; font-size: 14px; color: var(--muted); }
 .curpill .logo { width: 22px; height: 22px; }
 .big-amount { display: flex; align-items: center; }
@@ -255,6 +256,7 @@ const actions = {
   menu: () => { state.menu = !state.menu; render(); },
   sellPick: (el) => { if (el.dataset.value === 'eth:USDC') return; state.sell = { asset: el.dataset.value, unit: 'usd', typed: '' }; render(); springSlide(-50, 0); },
   sellBack: () => { springSlide(0, -50, () => { state.sell = null; render(); }); },
+  sellMax: () => { const sl = state.sell; if (!sl) return; sl.unit = 'native'; sl.typed = human(balanceOf(sl.asset), sl.asset); render(); const inp = main.querySelector('[data-input=sellAmount]'); if (inp) { inp.value = sl.typed; inp.style.width = Math.max(1, inp.value.length) + 'ch'; } quoteSell(); },
   sellUnit: (el) => { state.sell.unit = el.dataset.value; state.sell.typed = ''; state.sell.quote = null; render(); },
   connectWallet: () => run(async () => { await connectEthWallet(true); }),
   buy: () => { state.buying = true; render(); },
@@ -519,7 +521,7 @@ function sellPane(sl) {
   const usd = sl.unit === 'usd';
   return `
     <button type="button" class="link back" data-action="sellBack">‹ ${esc(NAMES[sl.asset] || sym)}</button>
-    <p class="muted center" style="margin-top:-6px">You hold ${money(balanceOf(sl.asset), sl.asset)}</p>
+    <p class="muted center" style="margin-top:-6px">You hold <button type="button" class="link maxlink" data-action="sellMax" title="Sell all of it">${money(balanceOf(sl.asset), sl.asset)}</button></p>
     <form data-form="sell" class="stack">
       <div class="big-amount">
         <span class="grow"></span>
