@@ -207,7 +207,12 @@ impl Node {
                 check(
                     matches!(&st, PaymentStatus::Included { block_hash: bh, block_height: h, .. } if bh.eq_ignore_ascii_case(block_hash) && h == block_height),
                     format!("LegIncluded {} leg {leg}: chain says {st:?}", hex::encode(match_id)),
-                )
+                )?;
+                if *leg == 1 && !m.maker_source.is_empty() {
+                    let from_ok = self.check_with_retry(|| self.chains.paid_from(asset, txid, &m.maker_source)).await?;
+                    check(from_ok, format!("LegIncluded {} leg 1: delivery did not come from the issuer's address {}", hex::encode(match_id), m.maker_source))?;
+                }
+                Ok(())
             }
             Body::MatchClosed { match_id } => {
                 let m = self.get_match(match_id).await?;
@@ -541,6 +546,14 @@ impl Node {
             let asset = chain::asset(&m.maker_asset).ok_or_else(|| anyhow!("unknown asset"))?;
             match self.chains.check_payment(asset, &maker_txid, &m.maker_pay_to, m.maker_amount as u64).await? {
                 PaymentStatus::Included { block_hash, block_height, .. } => {
+                    // A delivery only counts from the address the issuer said its coins sit at.
+                    if !m.maker_source.is_empty() && !self.chains.paid_from(asset, &maker_txid, &m.maker_source).await? {
+                        tracing::warn!("match {}: delivery {maker_txid} did not come from {}", hex::encode(&m.id), m.maker_source);
+                        if height >= maker_deadline {
+                            self.append(Body::LegMissed { match_id: mid, leg: 1 }).await?;
+                        }
+                        return Ok(());
+                    }
                     self.append(Body::LegIncluded { match_id: mid, leg: 1, txid: maker_txid, block_hash, block_height }).await?;
                 }
                 _ if height >= maker_deadline => {

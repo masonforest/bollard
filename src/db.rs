@@ -106,6 +106,7 @@ pub struct Match {
     pub maker_txid: Option<String>,
     #[serde(serialize_with = "hex_opt")]
     pub maker_payer: Option<Vec<u8>>,
+    pub maker_source: String,
     pub maker_block_hash: Option<String>,
     pub maker_block_height: Option<i64>,
     pub maker_included_height: Option<i32>,

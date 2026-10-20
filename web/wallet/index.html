@@ -238,7 +238,7 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.success = null; state.qr = null; state.buying = false; if (state.view === 'activity') loadActivity(); render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.success = null; state.qr = null; state.buying = false; if (state.view === 'activity') loadActivity(); if (state.view === 'withdraw') { const held = (state.info?.assets || []).filter((x) => x.amount > 0); loadIssuers(held[0]?.asset); } render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
 };
@@ -291,7 +291,8 @@ const forms = {
     const asset = form.asset.value; const amount = toAtoms(form.amount.value, asset);
     const address = form.to.value.trim();
     if (!address) throw new Error('Enter the address to deliver to.');
-    await tx(TxType.Exercise, { asset, quantity: amount, receive_address: address });
+    const issuer = form.issuer?.value ? hex.dec(form.issuer.value) : new Uint8Array(0);
+    await tx(TxType.Exercise, { asset, quantity: amount, receive_address: address, issuer });
     state.success = `Withdrawing ${money(amount, asset)}: the maker delivers to ${short(address, 12)} shortly.`; state.view = 'home';
     await refresh();
   }),
@@ -339,6 +340,7 @@ async function watchDeposit() {
     } catch {}
   }, 10000);
 }
+async function loadIssuers(asset) { try { state.issuers = (await j('/issuers')).filter((i) => i.asset === asset); } catch { state.issuers = []; } render(); }
 async function loadActivity() { if (me()) { state.activity = await j(`/activity/${me()}`); render(); } }
 
 // ----- views -----
@@ -495,10 +497,11 @@ const views = {
       <h2>Withdraw</h2>
       ${held.length ? `
       <form data-form="withdraw" class="stack">
-        <div class="field"><span class="label">Currency</span><select name="asset">${held.map((x) => `<option value="${x.asset}">${NAMES[x.asset] || x.asset} · ${money(x.amount, x.asset)}</option>`).join('')}</select></div>
+        <div class="field"><span class="label">Currency</span><select name="asset" data-change="asset">${held.map((x) => `<option value="${x.asset}">${NAMES[x.asset] || x.asset} · ${money(x.amount, x.asset)}</option>`).join('')}</select></div>
         <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>
         <div class="field"><span class="label">Deliver to (your address on that chain)</span><input name="to" class="mono" autocomplete="off" spellcheck="false" required></div>
-        <p class="muted">The maker who issued these delivers the real coins to that address. Their BLRD stake pays you if they don't.</p>
+        <div class="field"><span class="label">Delivered by</span><select name="issuer" data-change="noop"><option value="">Whichever maker the ledger picks</option>${(state.issuers || []).map((i) => `<option value="${i.account}">${short(i.account, 10)} · ${i.ratio_bps >= 0 ? (i.ratio_bps / 100).toFixed(0) + '% collateral' : ''} · from ${short(i.source, 12)}</option>`).join('')}</select></div>
+        <p class="muted">The maker delivers the real coins to your address from the address it declared when it issued. Their BLRD stake pays you if they don't. If you see a maker's coins move, you can call that maker here.</p>
         <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Withdraw</button>
       </form>` : '<p class="muted center">Nothing to withdraw yet.</p>'}`;
   },
@@ -538,7 +541,7 @@ const views = {
 // ----- wiring -----
 main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el); } });
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
-main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
+main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'noop') return; if (el.name === 'asset' && state.view === 'withdraw') { loadIssuers(el.value); return; } if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
 main.addEventListener('input', (e) => {
   const el = e.target.closest('[data-input=depositAmount]'); if (!el) return;
   el.style.width = Math.max(1, el.value.length) + 'ch';

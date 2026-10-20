@@ -95,6 +95,26 @@ impl EvmRpc {
         Ok(hex_u64(b.get("number")))
     }
 
+    /// Was `txid` sent from one of `sources`: the transaction sender for ether, the Transfer's `from` for a token?
+    pub async fn paid_from(&self, asset: &AssetInfo, txid: &str, sources: &[String]) -> Result<bool> {
+        let hit = |a: &str| sources.iter().any(|s| addr_eq(s, a));
+        let tx = self.call("eth_getTransactionByHash", json!([txid])).await?;
+        if asset.contract.is_none() {
+            return Ok(tx.get("from").and_then(|f| f.as_str()).map(hit).unwrap_or(false));
+        }
+        let receipt = self.call("eth_getTransactionReceipt", json!([txid])).await?;
+        Ok(receipt
+            .get("logs")
+            .and_then(|l| l.as_array())
+            .map(|logs| {
+                logs.iter().any(|l| {
+                    let topics = l.get("topics").and_then(|t| t.as_array());
+                    matches!(topics, Some(t) if t.len() == 3 && t[0].as_str().map(|s| addr_eq(s, TRANSFER_TOPIC)).unwrap_or(false) && t[1].as_str().map(|s| s.len() >= 40 && hit(&s[s.len() - 40..])).unwrap_or(false))
+                })
+            })
+            .unwrap_or(false))
+    }
+
     pub async fn check_payment(&self, asset: &AssetInfo, txid: &str, to: &str, amount: u64) -> Result<PaymentStatus> {
         let tx = self.call("eth_getTransactionByHash", json!([txid])).await?;
         if tx.is_null() {

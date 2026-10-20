@@ -1019,6 +1019,7 @@ impl<'a> ::flatbuffers::Follow<'a> for Mint<'a> {
 impl<'a> Mint<'a> {
   pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
   pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
+  pub const VT_SOURCE: ::flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -1031,6 +1032,7 @@ impl<'a> Mint<'a> {
   ) -> ::flatbuffers::WIPOffset<Mint<'bldr>> {
     let mut builder = MintBuilder::new(_fbb);
     builder.add_quantity(args.quantity);
+    if let Some(x) = args.source { builder.add_source(x); }
     if let Some(x) = args.asset { builder.add_asset(x); }
     builder.finish()
   }
@@ -1050,6 +1052,13 @@ impl<'a> Mint<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u64>(Mint::VT_QUANTITY, Some(0)).unwrap()}
   }
+  #[inline]
+  pub fn source(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Mint::VT_SOURCE, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Mint<'_> {
@@ -1060,6 +1069,7 @@ impl ::flatbuffers::Verifiable for Mint<'_> {
     v.visit_table(pos)?
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
      .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("source", Self::VT_SOURCE, false)?
      .finish();
     Ok(())
   }
@@ -1067,6 +1077,7 @@ impl ::flatbuffers::Verifiable for Mint<'_> {
 pub struct MintArgs<'a> {
     pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub quantity: u64,
+    pub source: Option<::flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for MintArgs<'a> {
   #[inline]
@@ -1074,6 +1085,7 @@ impl<'a> Default for MintArgs<'a> {
     MintArgs {
       asset: None,
       quantity: 0,
+      source: None,
     }
   }
 }
@@ -1090,6 +1102,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MintBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_quantity(&mut self, quantity: u64) {
     self.fbb_.push_slot::<u64>(Mint::VT_QUANTITY, quantity, 0);
+  }
+  #[inline]
+  pub fn add_source(&mut self, source: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Mint::VT_SOURCE, source);
   }
   #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> MintBuilder<'a, 'b, A> {
@@ -1111,6 +1127,7 @@ impl ::core::fmt::Debug for Mint<'_> {
     let mut ds = f.debug_struct("Mint");
       ds.field("asset", &self.asset());
       ds.field("quantity", &self.quantity());
+      ds.field("source", &self.source());
       ds.finish()
   }
 }
@@ -1376,6 +1393,7 @@ impl<'a> Exercise<'a> {
   pub const VT_ASSET: ::flatbuffers::VOffsetT = 4;
   pub const VT_QUANTITY: ::flatbuffers::VOffsetT = 6;
   pub const VT_RECEIVE_ADDRESS: ::flatbuffers::VOffsetT = 8;
+  pub const VT_ISSUER: ::flatbuffers::VOffsetT = 10;
 
   #[inline]
   pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -1388,6 +1406,7 @@ impl<'a> Exercise<'a> {
   ) -> ::flatbuffers::WIPOffset<Exercise<'bldr>> {
     let mut builder = ExerciseBuilder::new(_fbb);
     builder.add_quantity(args.quantity);
+    if let Some(x) = args.issuer { builder.add_issuer(x); }
     if let Some(x) = args.receive_address { builder.add_receive_address(x); }
     if let Some(x) = args.asset { builder.add_asset(x); }
     builder.finish()
@@ -1415,6 +1434,13 @@ impl<'a> Exercise<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Exercise::VT_RECEIVE_ADDRESS, None)}
   }
+  #[inline]
+  pub fn issuer(&self) -> Option<::flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u8>>>(Exercise::VT_ISSUER, None)}
+  }
 }
 
 impl ::flatbuffers::Verifiable for Exercise<'_> {
@@ -1426,6 +1452,7 @@ impl ::flatbuffers::Verifiable for Exercise<'_> {
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("asset", Self::VT_ASSET, false)?
      .visit_field::<u64>("quantity", Self::VT_QUANTITY, false)?
      .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("receive_address", Self::VT_RECEIVE_ADDRESS, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u8>>>("issuer", Self::VT_ISSUER, false)?
      .finish();
     Ok(())
   }
@@ -1434,6 +1461,7 @@ pub struct ExerciseArgs<'a> {
     pub asset: Option<::flatbuffers::WIPOffset<&'a str>>,
     pub quantity: u64,
     pub receive_address: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub issuer: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for ExerciseArgs<'a> {
   #[inline]
@@ -1442,6 +1470,7 @@ impl<'a> Default for ExerciseArgs<'a> {
       asset: None,
       quantity: 0,
       receive_address: None,
+      issuer: None,
     }
   }
 }
@@ -1464,6 +1493,10 @@ impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ExerciseBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Exercise::VT_RECEIVE_ADDRESS, receive_address);
   }
   #[inline]
+  pub fn add_issuer(&mut self, issuer: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Exercise::VT_ISSUER, issuer);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ExerciseBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ExerciseBuilder {
@@ -1484,6 +1517,7 @@ impl ::core::fmt::Debug for Exercise<'_> {
       ds.field("asset", &self.asset());
       ds.field("quantity", &self.quantity());
       ds.field("receive_address", &self.receive_address());
+      ds.field("issuer", &self.issuer());
       ds.finish()
   }
 }

@@ -4,7 +4,7 @@
 pub mod btc;
 pub mod evm;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 
 pub const GRACE_BLOCKS: u32 = 2;
@@ -110,6 +110,20 @@ impl Chains {
         }
     }
 
+    /// Did `txid` spend from `source`? For an xpub source, any of its first 1,000 child addresses counts.
+    pub async fn paid_from(&self, asset: &AssetInfo, txid: &str, source: &str) -> Result<bool> {
+        let candidates: Vec<String> = if source.starts_with("xpub") {
+            (0..1000u32).filter_map(|i| receive_address(source, asset.chain, i).ok()).collect()
+        } else {
+            vec![source.to_string()]
+        };
+        match asset.chain {
+            "btc" => self.btc.paid_from(txid, &candidates).await,
+            "eth" => self.eth.paid_from(asset, txid, &candidates).await,
+            other => Err(anyhow!("no adapter for chain {other}")),
+        }
+    }
+
     /// Is a payment included at (block_hash, block_height) deep by that chain's rule?
     pub async fn is_deep(&self, chain: &str, txid: &str, block_hash: &str, block_height: u64) -> Result<bool> {
         let p = chain_params(chain);
@@ -121,12 +135,32 @@ impl Chains {
     }
 }
 
+/// A plain address must be a mainnet Bitcoin address or a 20-byte hex Ethereum address.
+pub fn validate_address(addr: &str, chain: &str) -> Result<()> {
+    match chain {
+        "btc" => {
+            use std::str::FromStr;
+            bitcoin::Address::from_str(addr).map_err(|e| anyhow!("bad bitcoin address: {e}"))?.require_network(bitcoin::Network::Bitcoin).map_err(|_| anyhow!("not a mainnet bitcoin address"))?;
+            Ok(())
+        }
+        "eth" => {
+            let h = addr.strip_prefix("0x").ok_or_else(|| anyhow!("ethereum addresses start with 0x"))?;
+            if h.len() != 40 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+                bail!("bad ethereum address");
+            }
+            Ok(())
+        }
+        other => bail!("no addresses on {other}"),
+    }
+}
+
 /// Where a payment to a maker should go. A plain address is used as is. An
 /// xpub yields a fresh address per claim: child 0/i of the xpub, P2WPKH on
 /// Bitcoin and a keccak address on Ethereum, so a maker's wallet can tell
 /// payments apart without any memo.
 pub fn receive_address(given: &str, chain: &str, index: u32) -> Result<String> {
     if !given.starts_with("xpub") {
+        validate_address(given, chain)?;
         return Ok(given.to_string());
     }
     use bitcoin::bip32::{ChildNumber, Xpub};

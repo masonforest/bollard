@@ -216,8 +216,16 @@ async fn oracle(State(n): S) -> ApiResult {
 }
 
 async fn issuers(State(n): S) -> ApiResult {
-    let rows: Vec<(Vec<u8>, String, i64, i64, i64)> = sqlx::query_as("select i.account, i.asset, i.issued, a.staked, a.unstaking from issuers i join accounts a on a.pubkey = i.account where i.issued > 0 order by i.asset, a.staked desc").fetch_all(&n.db).await?;
-    let rows: Vec<Value> = rows.into_iter().map(|(acct, asset, issued, staked, unstaking)| json!({"account": hex::encode(acct), "asset": asset, "issued": issued, "staked": staked, "unstaking": unstaking})).collect();
+    let rows: Vec<(Vec<u8>, String, i64, i64, i64, String)> = sqlx::query_as("select i.account, i.asset, i.issued, a.staked, a.unstaking, i.source from issuers i join accounts a on a.pubkey = i.account where i.issued > 0 order by i.asset, a.staked desc").fetch_all(&n.db).await?;
+    let height = n.height();
+    let mut c = n.db.acquire().await?;
+    let mut out = Vec::new();
+    for (acct, asset, issued, staked, unstaking, source) in rows {
+        let iv = crate::apply::issued_value(&mut c, &acct, height).await.unwrap_or(0);
+        let sv = crate::apply::stake_value(&mut c, &acct, height).await.unwrap_or(0);
+        out.push(json!({"account": hex::encode(&acct), "asset": asset, "issued": issued, "staked": staked, "unstaking": unstaking, "source": source, "ratio_bps": if iv > 0 { (sv * 10_000 / iv) as i64 } else { -1 }}));
+    }
+    let rows = out;
     Ok(Json(json!(rows)))
 }
 

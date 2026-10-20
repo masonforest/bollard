@@ -92,6 +92,12 @@ impl BtcRpc {
     }
 
     /// Does `txid` pay at least `amount` sats to `to`, and where is it?
+    /// Does any input of `txid` spend from one of `sources`? Esplora reports each input's previous output.
+    pub async fn paid_from(&self, txid: &str, sources: &[String]) -> Result<bool> {
+        let tx: Value = self.http.get(format!("{}/tx/{txid}", self.esplora)).send().await?.error_for_status()?.json().await?;
+        Ok(tx.get("vin").and_then(|v| v.as_array()).map(|ins| ins.iter().any(|i| i.pointer("/prevout/scriptpubkey_address").and_then(|a| a.as_str()).map(|a| sources.iter().any(|s| s == a)).unwrap_or(false))).unwrap_or(false))
+    }
+
     pub async fn check_payment(&self, txid: &str, to: &str, amount: u64) -> Result<PaymentStatus> {
         let Some(tx) = self.get_transaction(txid).await? else { return Ok(PaymentStatus::Unseen) };
         let paid: u64 = tx

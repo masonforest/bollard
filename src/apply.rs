@@ -634,8 +634,18 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     events.push(ev("SetCurrency", json!({"account": hex::encode(&acct), "asset": asset})));
                 }
 
-                TxBody::Mint { asset, quantity } => {
+                TxBody::Mint { asset, quantity, source } => {
                     let a = ledger::ensure_asset(asset)?;
+                    // Every issuer names where its coins sit; deliveries must come from there, and anyone can watch it.
+                    if source.is_empty() {
+                        bail!("name the on-chain address the coins behind these options sit at");
+                    }
+                    chain::receive_address(source, a.chain, 0)?;
+                    let had = ledger::source(c, &acct, asset).await?;
+                    if !had.is_empty() && had != *source && ledger::issued(c, &acct, asset).await? > 0 {
+                        bail!("your outstanding {asset} is backed from {had}; burn it before moving to another address");
+                    }
+                    ledger::set_source(c, &acct, asset, source).await?;
                     if a.chain == "blrd" {
                         bail!("BLRD cannot be minted");
                     }
@@ -718,6 +728,10 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         .await?;
                     if !address.is_empty() {
                         for a in chain::ASSETS.iter().filter(|a| a.chain == *ch) {
+                            let had = ledger::source(c, &acct, a.id).await?;
+                            if had.is_empty() || ledger::issued(c, &acct, a.id).await? == 0 {
+                                ledger::set_source(c, &acct, a.id, address).await?;
+                            }
                             let mut idb = e.hash.to_vec();
                             idb.extend_from_slice(a.id.as_bytes());
                             let id = crate::crypto::sha256(&idb).to_vec();
@@ -812,7 +826,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     }
                 }
 
-                TxBody::Exercise { asset, quantity, receive_address } => {
+                TxBody::Exercise { asset, quantity, receive_address, issuer: wanted } => {
                     let a = ledger::ensure_asset(asset)?;
                     if a.chain == "blrd" {
                         bail!("BLRD is not an option");
@@ -829,7 +843,17 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     // did not issue itself it takes over from the other issuers, who pay it for that in BLRD
                     // from their stakes at the oracle price. The holder gets a single payment.
                     let q = i(*quantity)?;
-                    let (deliverer, taken_over) = assign_deliverer(c, asset, q, e.height).await?;
+                    let (deliverer, taken_over) = if wanted.is_empty() {
+                        assign_deliverer(c, asset, q, e.height).await?
+                    } else {
+                        // The holder called a particular maker: it must be able to cover the whole thing itself.
+                        let outstanding = ledger::issued(c, wanted, asset).await?;
+                        if outstanding < q {
+                            bail!("that issuer has only {outstanding} {asset} outstanding");
+                        }
+                        (wanted.clone(), Vec::new())
+                    };
+                    let maker_source = ledger::source(c, &deliverer, asset).await?;
                     let p_asset = oracle_price(c, asset, e.height).await?.unwrap_or(0) as i128;
                     let p_blrd = oracle_price(c, BLRD, e.height).await?.unwrap_or(GENESIS_BLRD_PRICE) as i128;
                     let id = e.hash.to_vec();
@@ -848,7 +872,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                     let issued = ledger::issued(c, &deliverer, asset).await?;
                     ledger::set_issued(c, &deliverer, asset, issued - q).await?;
                     let bond = reserve_stake_worth(c, &deliverer, &id, asset, q, e.height).await?;
-                    sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise')")
+                    sqlx::query("insert into matches (id, seq, order_id, maker, taker, market, side, quantity, price, bond, claim_bond, fill_policy, taker_chain, taker_asset, taker_amount, taker_pay_to, maker_chain, maker_asset, maker_amount, maker_pay_to, status, claimed_ts, claimed_height, taker_txid, taker_included_height, kind, maker_source) values ($1,$2,$1,$3,$4,$5,1,$6,0,$7,0,1,'ledger',$5,$6,'',$8,$5,$6,$9,'open',$10,$11,'exercised',$11,'exercise',$12)")
                         .bind(&id)
                         .bind(seq as i64)
                         .bind(&deliverer)
@@ -860,6 +884,7 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         .bind(receive_address)
                         .bind(e.time as i64)
                         .bind(e.height as i32)
+                        .bind(&maker_source)
                         .execute(&mut *c)
                         .await?;
                     events.push(ev("Exercise", json!({"match": hex::encode(&id), "account": hex::encode(&acct), "issuer": hex::encode(&deliverer), "asset": asset, "quantity": q, "bond": bond, "to": receive_address})));
@@ -981,6 +1006,9 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                         if o.mint {
                             // Minted now, against the maker's stake, free BLRD being staked as needed.
                             let issued = ledger::issued(c, &o.account, base.id).await?;
+                            if ledger::source(c, &o.account, base.id).await?.is_empty() {
+                                ledger::set_source(c, &o.account, base.id, &o.recv_addr).await?;
+                            }
                             ledger::set_issued(c, &o.account, base.id, issued + qty).await?;
                             ledger::credit(c, &o.id, base.id, ledger::NO_ISSUER, qty).await?;
                             sqlx::query("update orders set escrow_left = escrow_left + $2 where id = $1").bind(&o.id).bind(qty).execute(&mut *c).await?;

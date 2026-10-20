@@ -48,8 +48,8 @@ export function buildTx(account, nonce, type, body) {
       off = b.endObject(); break;
     }
     case TxType.Mint: {
-      const a = b.createString(body.asset);
-      b.startObject(2); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); off = b.endObject(); break;
+      const a = b.createString(body.asset); const src = b.createString(body.source ?? '');
+      b.startObject(3); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); b.addFieldOffset(2, src, 0); off = b.endObject(); break;
     }
     case TxType.SetReceiveAddress: {
       const c = b.createString(body.chain); const a = b.createString(body.address ?? '');
@@ -72,8 +72,8 @@ export function buildTx(account, nonce, type, body) {
       b.startObject(3); b.addFieldOffset(0, to, 0); b.addFieldOffset(1, a, 0); b.addFieldInt64(2, big(body.amount), 0n); off = b.endObject(); break;
     }
     case TxType.Exercise: {
-      const a = b.createString(body.asset); const ra = b.createString(body.receive_address ?? '');
-      b.startObject(3); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); b.addFieldOffset(2, ra, 0); off = b.endObject(); break;
+      const a = b.createString(body.asset); const ra = b.createString(body.receive_address ?? ''); const iss = b.createByteVector(body.issuer ?? new Uint8Array(0));
+      b.startObject(4); b.addFieldOffset(0, a, 0); b.addFieldInt64(1, big(body.quantity), 0n); b.addFieldOffset(2, ra, 0); b.addFieldOffset(3, iss, 0); off = b.endObject(); break;
     }
     case TxType.SetCurrency: {
       const a = b.createString(body.asset);

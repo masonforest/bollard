@@ -51,7 +51,7 @@ pub enum TxBody {
         leg: u8,
         txid: String,
     },
-    Mint { asset: String, quantity: u64 },
+    Mint { asset: String, quantity: u64, source: String },
     Stake { amount: u64, asset: String },
     Unstake { amount: u64, asset: String },
     Liquidate {
@@ -68,7 +68,13 @@ pub enum TxBody {
         asset: String,
         amount: u64,
     },
-    Exercise { asset: String, quantity: u64, receive_address: String },
+    Exercise {
+        asset: String,
+        quantity: u64,
+        receive_address: String,
+        #[serde(serialize_with = "hex_bytes")]
+        issuer: Vec<u8>,
+    },
     SetCurrency { asset: String },
 }
 
@@ -208,9 +214,10 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let args = fb::ReportPaymentArgs { match_id: Some(m), leg: *leg, txid: Some(t) };
             (fb::TxBody::ReportPayment, fb::ReportPayment::create(&mut b, &args).as_union_value())
         }
-        TxBody::Mint { asset, quantity } => {
+        TxBody::Mint { asset, quantity, source } => {
             let a = b.create_string(asset);
-            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity }).as_union_value())
+            let src = b.create_string(source);
+            (fb::TxBody::Mint, fb::Mint::create(&mut b, &fb::MintArgs { asset: Some(a), quantity: *quantity, source: Some(src) }).as_union_value())
         }
         TxBody::Stake { amount, asset } => {
             let a = b.create_string(asset);
@@ -239,10 +246,11 @@ pub fn build_tx(account: &[u8], nonce: u64, body: &TxBody) -> Vec<u8> {
             let a = b.create_string(asset);
             (fb::TxBody::Send, fb::Send::create(&mut b, &fb::SendArgs { to: Some(to), asset: Some(a), amount: *amount }).as_union_value())
         }
-        TxBody::Exercise { asset, quantity, receive_address } => {
+        TxBody::Exercise { asset, quantity, receive_address, issuer } => {
+            let iss = b.create_vector(issuer);
             let a = b.create_string(asset);
             let ra = b.create_string(receive_address);
-            (fb::TxBody::Exercise, fb::Exercise::create(&mut b, &fb::ExerciseArgs { asset: Some(a), quantity: *quantity, receive_address: Some(ra) }).as_union_value())
+            (fb::TxBody::Exercise, fb::Exercise::create(&mut b, &fb::ExerciseArgs { asset: Some(a), quantity: *quantity, issuer: Some(iss), receive_address: Some(ra) }).as_union_value())
         }
         TxBody::SetCurrency { asset } => {
             let a = b.create_string(asset);
@@ -300,7 +308,7 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
         }
         fb::TxBody::Mint => {
             let t = tx.body_as_mint().ok_or_else(|| anyhow!("bad Mint"))?;
-            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity() }
+            TxBody::Mint { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), source: t.source().unwrap_or("").to_string() }
         }
         fb::TxBody::Stake => {
             let t = tx.body_as_stake().ok_or_else(|| anyhow!("bad Stake"))?;
@@ -328,7 +336,7 @@ fn parse_tx_body(tx: &fb::Tx) -> Result<TxBody> {
         }
         fb::TxBody::Exercise => {
             let t = tx.body_as_exercise().ok_or_else(|| anyhow!("bad Exercise"))?;
-            TxBody::Exercise { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), receive_address: t.receive_address().unwrap_or("").to_string() }
+            TxBody::Exercise { asset: t.asset().unwrap_or("").to_string(), quantity: t.quantity(), receive_address: t.receive_address().unwrap_or("").to_string(), issuer: bytes(t.issuer()).to_vec() }
         }
         fb::TxBody::SetCurrency => {
             let t = tx.body_as_set_currency().ok_or_else(|| anyhow!("bad SetCurrency"))?;

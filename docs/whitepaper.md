@@ -147,7 +147,7 @@ A maker's stake is one pool. It is not split per asset or per order: everything 
 | --- | --- |
 | Stake(asset, amount) | Moves BLRD from the maker's balance into its stake, or options issued by another maker, such as bitcoin or dollars. A maker's own options cannot back its own promises. |
 | Unstake(asset, amount) | Asks for stake back. BLRD returns to the balance 144 blocks later, and until then it still backs the maker's options and can still be slashed; staked options return at once. Either fails if what remains would not cover the issuance. |
-| Mint(asset, quantity) | Creates `quantity` options on `asset` in the issuer's own balance. Requires a stake. |
+| Mint(asset, quantity, source) | Creates `quantity` options on `asset` in the issuer's own balance, and names the on-chain address the coins behind them sit at. Deliveries must come from that address, and anyone can watch it. Requires a stake. |
 | Burn(asset, quantity) | Destroys options the issuer holds. |
 
 ### The oracle
@@ -174,7 +174,7 @@ Send(to, asset, amount) moves options from one account to another in one log ent
 
 ### Exercising
 
-Exercise(asset, quantity, receive address) burns options the holder has and opens one delivery match against one maker, so the holder receives a single payment. The ledger chooses who: the thinnest-collateralized issuer that has enough outstanding to cover the whole exercise, which works as a standing margin call on whoever is closest to the line, else the largest issuer. Whatever the deliverer did not issue itself it takes over from the other issuers of that asset at once, thinnest first, so its stake backs the whole exercise from the first moment. The holder is paid first: only once the delivery is in a block and deep do the other issuers pay the deliverer for the shares it took, in BLRD from their stakes at the oracle price, on the ledger. A deliverer that fails is paid nothing for them. Nothing the holder is owed ever waits on makers settling among themselves. The issuer must pay the coin to the holder's address on its chain by the maker deadline. BLRD worth the options at oracle prices is reserved from the issuer's stake on the match: returned to the pool when the issuer delivers, paid to whoever else delivers, or paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.
+Exercise(asset, quantity, receive address, issuer) burns options the holder has and opens one delivery match against one maker, so the holder receives a single payment. The holder may name the maker, which is how a holder who has watched a maker's coins move calls that maker in; otherwise the ledger chooses: the thinnest-collateralized issuer that has enough outstanding to cover the whole exercise, which works as a standing margin call on whoever is closest to the line, else the largest issuer. Whatever the deliverer did not issue itself it takes over from the other issuers of that asset at once, thinnest first, so its stake backs the whole exercise from the first moment. The holder is paid first: only once the delivery is in a block and deep do the other issuers pay the deliverer for the shares it took, in BLRD from their stakes at the oracle price, on the ledger. A deliverer that fails is paid nothing for them. Nothing the holder is owed ever waits on makers settling among themselves. The issuer must pay the coin to the holder's address on its chain by the maker deadline. BLRD worth the options at oracle prices is reserved from the issuer's stake on the match: returned to the pool when the issuer delivers, paid to whoever else delivers, or paid to the holder if nobody does. Exercise is the only time a holder waits for a chain, and the only time a maker is forced to move a coin.
 
 ## Order book and matching
 
@@ -235,7 +235,7 @@ Coins move on chain in exactly two cases: a deposit, where a taker pays a maker 
 ### Exercise
 
 1. Exercise. The holder's options are burned and a delivery match opens against the issuer, with these options' share of the issuer's stake reserved as the bond.
-2. Maker pays. The issuer sends the coin to the holder's address and posts ReportPayment. The maker deadline is counted in Bitcoin blocks from the exercise.
+2. Maker pays. The issuer sends the coin to the holder's address, from the address it declared when it issued, and posts ReportPayment. A payment from anywhere else does not count. The maker deadline is counted in Bitcoin blocks from the exercise.
 3. Anyone may pay. The bond is released to whoever's payment satisfied the leg. If the issuer is slow or gone, a third party can deliver and take the bond. That is the repo.
 4. Included and deep. The bond is released only once the payment is deep (the depth each chain's adapter sets, at or beyond that chain's own finality), so an issuer cannot profit from a reorg of its own payment.
 5. MatchClosed. The bond, minus the match fee, goes back into the issuer's stake if the issuer delivered, or to the third party who did.

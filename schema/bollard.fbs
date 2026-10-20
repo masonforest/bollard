@@ -35,14 +35,14 @@ table ReportPayment { match_id: [ubyte]; leg: ubyte; txid: string; } // leg: 0 =
 
 // An issuer creates `quantity` options on `asset` for itself, locking `bond`
 // BLRD as cover for everything it has issued on that asset.
-table Mint { asset: string; quantity: uint64; }
+table Mint { asset: string; quantity: uint64; source: string; }  // source: the on-chain address the coins behind these options sit at; deliveries must come from it
 // An issuer destroys options it holds and frees the matching share of cover.
 table Burn { asset: string; quantity: uint64; }
 // Send options (or BLRD when asset is "BLRD") to another account. If the
 // recipient prefers another currency the ledger swaps on the way.
 table Send { to: [ubyte]; asset: string; amount: uint64; }
 // Burn options and demand delivery of the real asset to receive_address.
-table Exercise { asset: string; quantity: uint64; receive_address: string; }
+table Exercise { asset: string; quantity: uint64; receive_address: string; issuer: [ubyte]; }  // issuer: optional; call a particular maker
 // The currency an account wants to receive in.
 table SetCurrency { asset: string; }
 

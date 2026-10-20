@@ -82,6 +82,17 @@ pub async fn set_issued(c: &mut PgConnection, account: &[u8], asset: &str, issue
 
 /// The share of an issuer's cover that backs `quantity` of its outstanding options.
 
+/// The on-chain address a maker's coins for `asset` sit at.
+pub async fn source(c: &mut PgConnection, account: &[u8], asset: &str) -> Result<String> {
+    let row: Option<(String,)> = sqlx::query_as("select source from issuers where account = $1 and asset = $2").bind(account).bind(asset).fetch_optional(c).await?;
+    Ok(row.map(|r| r.0).unwrap_or_default())
+}
+
+pub async fn set_source(c: &mut PgConnection, account: &[u8], asset: &str, source: &str) -> Result<()> {
+    sqlx::query("insert into issuers (account, asset, issued, source) values ($1, $2, 0, $3) on conflict (account, asset) do update set source = $3").bind(account).bind(asset).bind(source).execute(c).await?;
+    Ok(())
+}
+
 pub fn ensure_asset(asset: &str) -> Result<&'static crate::chain::AssetInfo> {
     crate::chain::asset(asset).ok_or_else(|| anyhow!("unknown asset {asset}"))
 }
