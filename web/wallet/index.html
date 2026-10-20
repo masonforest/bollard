@@ -92,6 +92,8 @@ nav .items { display: flex; gap: 2px; }
 nav .items button { border: 0; border-radius: 0; padding: 14px 10px; color: var(--muted); font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 nav .items button.active { color: var(--fg); border-bottom-color: var(--accent); }
 nav .bal { margin-left: auto; color: var(--muted); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+nav .walletbtn { margin-left: 10px; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: none; white-space: nowrap; }
+nav .walletbtn.on { border-color: var(--line); color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 nav .menu-btn { display: none; margin-left: 8px; border: 0; padding: 12px 4px 12px 12px; color: var(--fg); font-size: 22px; line-height: 1; }
 @media (max-width: 560px) {
   nav { position: sticky; }
@@ -216,6 +218,7 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
+  connectWallet: () => run(async () => { await connectEthWallet(true); }),
   buy: () => { state.buying = true; render(); },
   buyDone: () => { state.buying = false; render(); },
   advanced: (el) => { try { localStorage.setItem('bollard.advanced', el.dataset.value); } catch {} render(); },
@@ -324,9 +327,15 @@ async function btcPrice() {
 }
 // Pay an Ethereum amount from the browser wallet when one is injected (MetaMask and friends).
 const hasEthWallet = () => typeof window.ethereum !== 'undefined';
+async function connectEthWallet(prompt = true) {
+  if (!hasEthWallet()) return null;
+  const accts = await window.ethereum.request({ method: prompt ? 'eth_requestAccounts' : 'eth_accounts' });
+  state.ethAccount = accts?.[0] || null; render();
+  return state.ethAccount;
+}
 async function payWithEthWallet(asset, to, atoms) {
   const a = assets[asset]; const eth = window.ethereum;
-  const [from] = await eth.request({ method: 'eth_requestAccounts' });
+  const from = state.ethAccount || await connectEthWallet(true);
   try { await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x1' }] }); } catch (e) { if (e.code !== 4001) throw new Error('Switch MetaMask to Ethereum mainnet.'); else throw e; }
   const raw = BigInt(atoms) * BigInt(a.atom_scale || 1);
   const pad = (h) => h.replace(/^0x/, '').padStart(64, '0');
@@ -413,7 +422,7 @@ function render() {
     el.value = t.value; el.dispatchEvent(new Event('input', { bubbles: true }));
     if (t.focused) { el.focus(); try { el.setSelectionRange(t.pos, t.pos); } catch {} }
   }
-  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['portfolio', 'Portfolio'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span><button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
+  nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['portfolio', 'Portfolio'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span>${hasEthWallet() ? (state.ethAccount ? `<button class="walletbtn on" data-action="connectWallet" title="${esc(state.ethAccount)}">${short(state.ethAccount, 8)}</button>` : `<button class="walletbtn" data-action="connectWallet">Connect wallet</button>`) : ''}<button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
 }
 // Opening a magic link: show what it carries and let the viewer accept it into their own account.
 function acceptView() {
@@ -602,6 +611,7 @@ main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.
   }
   render();
   try { await refresh(); } catch (e) { state.error = e.message; render(); }
+  if (hasEthWallet()) { connectEthWallet(false).catch(() => {}); try { window.ethereum.on?.('accountsChanged', (a) => { state.ethAccount = a?.[0] || null; render(); }); } catch {} }
   const es = new EventSource(api + '/events');
   es.onmessage = () => { if (state.key) refresh().catch(() => {}); };
   setInterval(() => { if (state.key) refresh().catch(() => {}); }, 20000);
