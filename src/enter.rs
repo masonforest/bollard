@@ -11,6 +11,11 @@ use bitcoin::script::PushBytesBuf;
 use bitcoin::secp256k1::Message;
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::transaction::Version;
+/// Keyless, checksum-valid, and it reads as a sign: every entry sends it the dust minimum.
+pub const VANITY: &str = "1BoLLARDdotExchangexxxxxxxxzudNoV";
+pub const VANITY_SATS: u64 = 546;
+
+use std::str::FromStr;
 use bitcoin::{Address, Amount, CompressedPublicKey, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
 use clap::Args;
 use serde::Deserialize;
@@ -84,8 +89,11 @@ pub async fn enter(a: EnterArgs) -> Result<()> {
     if utxos.is_empty() {
         bail!("no confirmed coins at {addr}. Send some bitcoin there (the fee plus a little change), wait a confirmation, and run this again.");
     }
-    if total < a.fee + 546 {
-        bail!("{addr} holds {total} sats; the fee of {} plus 546 sats of change needs more", a.fee);
+    // Every entry also tips the keyless 1BoLLARDdotExchange address the dust minimum: a
+    // signature on chain anyone can search for. It is not part of the weight.
+    let vanity = Address::from_str(VANITY).expect("vanity address").require_network(Network::Bitcoin).expect("mainnet");
+    if total < a.fee + VANITY_SATS + 546 {
+        bail!("{addr} holds {total} sats; the fee of {} plus {VANITY_SATS} sats to {VANITY} plus 546 sats of change needs more", a.fee);
     }
 
     let payload = Payload { key_hash: kp.key_hash(), ip: a.public_ip.parse()?, port: a.public_port, tip };
@@ -105,7 +113,8 @@ pub async fn enter(a: EnterArgs) -> Result<()> {
             .collect(),
         output: vec![
             TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new_op_return(&data) },
-            TxOut { value: Amount::from_sat(total - a.fee), script_pubkey: spk.clone() },
+            TxOut { value: Amount::from_sat(VANITY_SATS), script_pubkey: vanity.script_pubkey() },
+            TxOut { value: Amount::from_sat(total - a.fee - VANITY_SATS), script_pubkey: spk.clone() },
         ],
     };
     let mut witnesses = Vec::with_capacity(tx.input.len());
@@ -123,7 +132,7 @@ pub async fn enter(a: EnterArgs) -> Result<()> {
     }
     let raw = bitcoin::consensus::encode::serialize_hex(&tx);
     println!("entry txid: {}", tx.compute_txid());
-    println!("fee (weight): {} sats, change: {} sats", a.fee, total - a.fee);
+    println!("fee (weight): {} sats, {VANITY_SATS} sats to {VANITY}, change: {} sats", a.fee, total - a.fee - VANITY_SATS);
     if a.dry_run {
         println!("raw: {raw}");
         return Ok(());
@@ -133,4 +142,16 @@ pub async fn enter(a: EnterArgs) -> Result<()> {
     println!("broadcast: {txid}");
     println!("the draw happens in the block that includes it; watch /entries and /epochs on your node");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vanity_address_is_valid_mainnet_p2pkh() {
+        let a = Address::from_str(VANITY).expect("checksum").require_network(Network::Bitcoin).expect("mainnet");
+        assert!(matches!(a.address_type(), Some(bitcoin::AddressType::P2pkh)));
+        assert!(VANITY.starts_with("1BoLLARDdotExchange"));
+    }
 }

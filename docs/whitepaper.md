@@ -48,9 +48,11 @@ Any Bitcoin transaction with exactly one OP\_RETURN output carrying this 75-byte
 
 75 bytes sits under the 80-byte limit that older Bitcoin Core versions relay by default, so no node operator has to change settings.
 
+The reference node also adds one output of 546 satoshis, the dust minimum, to `1BoLLARDdotExchangexxxxxxxxzudNoV`, a keyless legacy address whose checksum was computed rather than found. It is a signature anyone can search a block explorer for, it costs the entrant half a cent, and it plays no part in the draw.
+
 ### Weight
 
-Weight = the entry transaction's fee in satoshis (inputs minus outputs). No burn address and no special output: the fee simply goes to the miner, so Bitcoin miners are paid by the lottery without having to know Bollard exists. A miner who includes its own entry pays the fee to itself, so for a miner entering is free and winning is guaranteed by setting the fee above every other entry in the block. That is the intended way miners opt in.
+Weight = the entry transaction's fee in satoshis (inputs minus outputs). No burn address and no special output counts toward it: the fee simply goes to the miner, so Bitcoin miners are paid by the lottery without having to know Bollard exists. A miner who includes its own entry pays the fee to itself, so for a miner entering is free and winning is guaranteed by setting the fee above every other entry in the block. That is the intended way miners opt in.
 
 Consequence: non-miners only ever win blocks whose miner did not enter, with probability fee / total fees of entries in that block. If every pool opts in, leadership follows hash rate exactly.
 
