@@ -76,7 +76,7 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .whatis .logo { width: 26px; height: 26px; }
 .qmark { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .qmark:hover { border-color: var(--accent); color: var(--accent); }
-.whatis .tip { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--fg); color: var(--bg); font-size: 13px; padding: 8px 12px; border-radius: 10px; white-space: nowrap; z-index: 3; }
+.whatis .tip { position: absolute; top: 100%; right: -6px; margin-top: 8px; background: var(--fg); color: var(--bg); font-size: 13px; padding: 8px 12px; border-radius: 10px; white-space: nowrap; z-index: 3; }
 .whatis .tip::before { content: ''; position: absolute; bottom: 100%; right: 14px; border: 6px solid transparent; border-bottom-color: var(--fg); }
 .big-amount { display: flex; align-items: center; }
 .big-amount .grow { flex: 1; display: flex; justify-content: flex-end; }
@@ -490,7 +490,7 @@ const views = {
     return `
       <div class="balrow">
         <h1>${money(balanceOf(c), c)}</h1>
-        <span class="whatis">${coinIcon(c)}<button type="button" class="qmark" data-action="whatis" aria-label="What is this?">?</button>${state.whatis ? `<span class="tip">${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}${c === 'eth:USDC' ? ': US dollars as USDC, the Ethereum stablecoin' : ''}</span>` : ''}</span>
+        <span class="whatis">${coinIcon(c)}<button type="button" class="qmark" data-action="whatis" aria-label="What is this?">?</button>${state.whatis ? `<span class="tip">${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}</span>` : ''}</span>
       </div>
       ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
