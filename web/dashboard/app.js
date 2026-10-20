@@ -201,6 +201,10 @@ async function computeSimple() {
     for (const o of orders) { if (budget <= 0n) break; const affordable = (budget * 100000000n) / BigInt(o.price); const take = affordable < BigInt(o.qty_left) ? affordable : BigInt(o.qty_left); qty += take; budget -= quoteAmount(take, o.price); }
     if (qty <= 0n) { $('s-quote').textContent = `Nobody is ${side === 'buy' ? 'selling' : 'buying'} ${a.symbol} right now.`; $('s-go').disabled = true; return; }
   }
+  if (qty > 0n && qty < BigInt(a.min_quantity)) {
+    const minUsd = orders.length ? quoteAmount(BigInt(a.min_quantity), orders[0].price) : null;
+    $('s-quote').textContent = `The smallest ${a.symbol} trade is ${fromAtoms(a.min_quantity, asset)}${minUsd ? ` (about ${fromAtoms(minUsd, USDC)})` : ''}.`; $('s-go').disabled = true; return;
+  }
   let left = qty, quote = 0n; const fills = [];
   for (const o of orders) { if (left <= 0n) break; const take = left < BigInt(o.qty_left) ? left : BigInt(o.qty_left); fills.push({ order: o, qty: take }); quote += quoteAmount(take, o.price); left -= take; }
   if (!fills.length) { $('s-quote').textContent = `Nobody is ${side === 'buy' ? 'selling' : 'buying'} ${a.symbol} right now.`; $('s-go').disabled = true; return; }
