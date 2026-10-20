@@ -84,7 +84,10 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .ok { color: var(--ok); }
 main.full { max-width: none; padding: 0; }
 .overlay { position: fixed; inset: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; cursor: pointer; }
-iframe.trade { display: block; width: 100%; height: calc(100dvh - 52px - env(safe-area-inset-top)); border: 0; }
+#trade { background: var(--bg); }
+iframe.trade { display: block; width: 100%; height: calc(100dvh - 52px - env(safe-area-inset-top)); border: 0; background: var(--bg); opacity: 0; transition: opacity .25s ease; }
+iframe.trade.ready { opacity: 1; }
+main.full { min-height: 0; padding-bottom: 0; }
 main.full > p.center { margin: 8px 0 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -126,6 +129,7 @@ input.mono { font-size: 16px; }
 <body>
 <nav hidden></nav>
 <main></main>
+<div id="trade" hidden></div>
 <div id="modal" hidden></div>
 <script type="module">
 import { TxType, hex, signers, submit, createPasskey, signInPasskey, randomSecret, pubkeyOf } from '/dashboard/wire.js';
@@ -179,6 +183,16 @@ const signer = () => signers.passkey(state.key);
 const currency = () => state.info?.preferred || 'eth:USDC';
 const main = document.querySelector('main');
 const modal = document.getElementById('modal');
+const tradeBox = document.getElementById('trade');
+let tradeFrame = null;
+// The trade page lives in one frame for the whole session: loaded once, faded in when ready, never rebuilt.
+function ensureTradeFrame() {
+  if (tradeFrame) return tradeFrame;
+  tradeFrame = document.createElement('iframe'); tradeFrame.className = 'trade'; tradeFrame.title = 'Trade'; tradeFrame.src = '/dashboard/';
+  tradeFrame.addEventListener('load', () => tradeFrame.classList.add('ready'));
+  tradeBox.appendChild(tradeFrame);
+  return tradeFrame;
+}
 let shownSuccess = null;
 // Drawn once per success, so the check animates once; closed by a tap anywhere or the button.
 function showSuccess(text) {
@@ -426,10 +440,11 @@ function render() {
   }
   if (state.success && state.success !== shownSuccess) showSuccess(state.success);
   const v = state.accept ? acceptView : (views[state.view] || views.home);
-  const framed = state.view === 'portfolio' && (advanced() || state.buying);
-  main.classList.toggle('full', framed && !state.accept);
+  const framed = state.view === 'portfolio' && (advanced() || state.buying) && !state.accept;
+  main.classList.toggle('full', framed);
+  tradeBox.hidden = !framed;
+  if (framed) ensureTradeFrame();
   // Refreshes must not rebuild the Trade frame, or whatever is typed in it is lost.
-  if (framed && !state.accept && !state.busy && !state.error && main.querySelector('iframe.trade')) return;
   // Background refreshes re-render; keep whatever the user has typed, and where the caret was.
   const typed = [...main.querySelectorAll('input[name], select[name]')].map((el) => ({ name: el.name, value: el.value, focused: document.activeElement === el, pos: el.selectionStart }));
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '') + (state.qr ? `<div class="overlay" data-action="closeqr"><div class="qr big">${qrSvg(state.qr)}</div><p class="muted">Tap to close</p></div>` : '');
@@ -490,7 +505,7 @@ const views = {
   },
   portfolio: () => {
     // Advanced mode is the full trade view: chart, book and taking. Simple mode is what you hold.
-    if (advanced() || state.buying) return `${state.buying && !advanced() ? '<p class="center"><button class="link" data-action="buyDone">← Back to portfolio</button></p>' : ''}<iframe class="trade" src="/dashboard/" title="Trade"></iframe>`;
+    if (advanced() || state.buying) return state.buying && !advanced() ? '<p class="center"><button class="link" data-action="buyDone">← Back to portfolio</button></p>' : '';
     const held = holdings();
     const prices = state.prices || {};
     const value = (h) => { const p = prices[h.asset]; return p ? (h.amount * BigInt(p)) / 100000000n : null; };
@@ -630,6 +645,7 @@ main.addEventListener('submit', (e) => { e.preventDefault(); const fn = forms[e.
   render();
   try { await refresh(); } catch (e) { state.error = e.message; render(); }
   if (hasEthWallet()) { connectEthWallet(false).catch(() => {}); try { window.ethereum.on?.('accountsChanged', (a) => { state.ethAccount = a?.[0] || null; render(); }); } catch {} }
+  if (state.key) setTimeout(ensureTradeFrame, 1500);
   const es = new EventSource(api + '/events');
   es.onmessage = () => { if (state.key) refresh().catch(() => {}); };
   setInterval(() => { if (state.key) refresh().catch(() => {}); }, 20000);
