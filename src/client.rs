@@ -57,6 +57,7 @@ pub enum TxCmd {
         fill_policy: String,
         /// Your address on the chain of the asset you are buying
         #[arg(long)]
+        #[arg(long, default_value = "")]
         receive_address: String,
         /// Bitcoin height at which the order cancels itself
         #[arg(long)]
