@@ -110,7 +110,10 @@ input.mono { font-size: 16px; }
 .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 .gate { min-height: calc(100dvh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .gate button { width: min(300px, 100%); text-align: center; }
-.success { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0; }
+.success { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 20px 0; }
+.success p { font-size: 20px; }
+.success .primary { width: min(240px, 100%); margin-top: 6px; }
+#modal .overlay { cursor: default; }
 .success .ring { fill: var(--ok); transform-origin: 60px 60px; animation: pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
 .success .tick { fill: none; stroke: #fff; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 90; stroke-dashoffset: 90; animation: draw .5s .35s ease-out forwards; }
 @keyframes pop { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -121,6 +124,7 @@ input.mono { font-size: 16px; }
 <body>
 <nav hidden></nav>
 <main></main>
+<div id="modal" hidden></div>
 <script type="module">
 import { TxType, hex, signers, submit, createPasskey, signInPasskey, randomSecret, pubkeyOf } from '/dashboard/wire.js';
 
@@ -172,6 +176,15 @@ const me = () => state.key?.pubkey;
 const signer = () => signers.passkey(state.key);
 const currency = () => state.info?.preferred || 'eth:USDC';
 const main = document.querySelector('main');
+const modal = document.getElementById('modal');
+let shownSuccess = null;
+// Drawn once per success, so the check animates once; closed by a tap anywhere or the button.
+function showSuccess(text) {
+  shownSuccess = text;
+  modal.innerHTML = `<div class="overlay" data-action="dismissSuccess"><div class="success"><svg viewBox="0 0 120 120" width="110" height="110"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(text)}</p><button class="primary" data-action="dismissSuccess">Done</button></div></div>`;
+  modal.hidden = false;
+}
+modal.addEventListener('click', (e) => { if (e.target.closest('[data-action=dismissSuccess]')) { modal.hidden = true; modal.innerHTML = ''; state.success = null; shownSuccess = null; } });
 const nav = document.querySelector('nav');
 
 async function refresh() {
@@ -254,7 +267,7 @@ const actions = {
     state.success = `Accepted ${got.join(' + ')}`; state.view = 'home';
     await refresh();
   }),
-  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.success = null; state.qr = null; state.buying = false; if (state.view === 'activity') loadActivity(); if (state.view === 'withdraw') { const held = (state.info?.assets || []).filter((x) => x.amount > 0); loadIssuers(held[0]?.asset); } render(); },
+  tab: (el) => { state.view = el.dataset.value; state.menu = false; if (el.dataset.value !== 'deposit' && state.deposit && !state.deposit.watching) state.deposit = null; state.error = ''; state.qr = null; state.buying = false; if (state.view === 'activity') loadActivity(); if (state.view === 'withdraw') { const held = (state.info?.assets || []).filter((x) => x.amount > 0); loadIssuers(held[0]?.asset); } render(); },
   copy: async (el) => { try { await navigator.clipboard.writeText(el.dataset.text); } catch {} el.textContent = 'Copied'; setTimeout(() => (el.textContent = el.dataset.label || 'Copy'), 1500); },
   currency: (el) => run(async () => { await tx(TxType.SetCurrency, { asset: el.dataset.value }); await refresh(); }),
 };
@@ -409,6 +422,7 @@ function render() {
       </div>`;
     return;
   }
+  if (state.success && state.success !== shownSuccess) showSuccess(state.success);
   const v = state.accept ? acceptView : (views[state.view] || views.home);
   const framed = state.view === 'portfolio' && (advanced() || state.buying);
   main.classList.toggle('full', framed && !state.accept);
@@ -465,7 +479,6 @@ const views = {
         </div>
       </form>`;
     return `
-      ${state.success ? `<div class="success"><svg viewBox="0 0 120 120" width="96" height="96"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(state.success)}</p></div>` : ''}
       <div class="stack center"><h1>${money(balanceOf(c), c)}</h1></div>
       ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
