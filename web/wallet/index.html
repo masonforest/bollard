@@ -70,14 +70,8 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .optrow .sub { color: var(--muted); font-size: 13px; }
 .optrow .chev { color: var(--muted); font-size: 26px; line-height: 1; }
 .back { font-size: 15px; color: var(--muted); margin-bottom: 14px; align-self: flex-start; }
-h1.withlogo { display: inline-flex; align-items: center; gap: 10px; }
-h1.withlogo .logo { width: 0.82em; height: 0.82em; }
-.whatis { position: relative; display: inline-flex; align-items: center; justify-content: center; }
-.whatis .logo { width: 26px; height: 26px; }
-.qmark { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.qmark:hover { border-color: var(--accent); color: var(--accent); }
-.whatis .tip { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: var(--fg); color: var(--bg); font-size: 13px; padding: 8px 12px; border-radius: 10px; white-space: nowrap; z-index: 3; }
-.whatis .tip::before { content: ''; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-bottom-color: var(--fg); }
+.curpill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 6px; font-size: 14px; color: var(--muted); }
+.curpill .logo { width: 22px; height: 22px; }
 .big-amount { display: flex; align-items: center; }
 .big-amount .grow { flex: 1; display: flex; justify-content: flex-end; }
 .big-amount .entry { display: inline-flex; align-items: baseline; font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
@@ -239,7 +233,6 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
-  whatis: () => { state.whatis = !state.whatis; render(); },
   connectWallet: () => run(async () => { await connectEthWallet(true); }),
   buy: () => { state.buying = true; render(); },
   buyDone: () => { state.buying = false; render(); },
@@ -488,9 +481,9 @@ const views = {
         </div>
       </form>`;
     return `
-      <div class="stack center" style="gap:6px">
-        <h1 class="withlogo">${coinIcon(c)}<span>${c === 'eth:USDC' || c === 'eth:USDT' ? Number(human(balanceOf(c), c, 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : human(balanceOf(c), c)}</span></h1>
-        <span class="whatis"><button type="button" class="qmark" data-action="whatis" aria-label="What is this?">?</button>${state.whatis ? `<span class="tip">${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}</span>` : ''}</span>
+      <div class="stack center" style="gap:10px">
+        <span class="curpill">${coinIcon(c)}${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}</span>
+        <h1>${money(balanceOf(c), c)}</h1>
       </div>
       ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
@@ -607,7 +600,7 @@ const views = {
 };
 
 // ----- wiring -----
-main.addEventListener('click', (e) => { if (state.whatis && !e.target.closest('.whatis')) { state.whatis = false; render(); } const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el); } });
+main.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el); } });
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'noop') return; if (el.name === 'asset' && state.view === 'withdraw') { loadIssuers(el.value); return; } if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
 main.addEventListener('input', (e) => {
