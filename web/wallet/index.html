@@ -58,6 +58,18 @@ li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; 
 li .sub { display: block; color: var(--muted); font-size: 13px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
 .qr svg { display: block; width: 180px; border-radius: 8px; background: #fff; }
+.slider { overflow: hidden; }
+.slider .track { display: flex; width: 200%; transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.slider .track.two { transform: translateX(-50%); }
+.slider .pane { width: 50%; flex: none; padding: 2px; }
+.optrow { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; }
+.optrow:hover { border-color: var(--accent); }
+.optrow .logo { width: 40px; height: 40px; }
+.optrow .txt { flex: 1; display: flex; flex-direction: column; }
+.optrow .txt b { font-weight: 600; }
+.optrow .sub { color: var(--muted); font-size: 13px; }
+.optrow .chev { color: var(--muted); font-size: 26px; line-height: 1; }
+.back { font-size: 15px; color: var(--muted); margin-bottom: 14px; align-self: flex-start; }
 .big-amount { display: flex; align-items: center; }
 .big-amount .grow { flex: 1; display: flex; justify-content: flex-end; }
 .big-amount .entry { display: inline-flex; align-items: baseline; font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
@@ -219,7 +231,8 @@ const actions = {
     endFlight(null);
     await refresh();
   }),
-  depositAsset: (el) => { state.deposit = { asset: el.dataset.value, unit: el.dataset.value === 'btc:BTC' ? 'usd' : 'native' }; render(); if (el.dataset.value === 'btc:BTC') btcPrice().then((p) => { state.btcPrice = p; render(); }); },
+  depositPick: (el) => { state.deposit = { asset: el.dataset.value, unit: el.dataset.value === 'btc:BTC' ? 'usd' : 'native', step: 'amount', anim: 'in' }; render(); slide(); if (el.dataset.value === 'btc:BTC') btcPrice().then((p) => { state.btcPrice = p; render(); }); },
+  depositBack: () => { state.deposit = { asset: state.deposit.asset, unit: state.deposit.unit, step: 'pick', anim: 'out' }; render(); slide(); },
   depositUnit: (el) => { state.deposit.unit = el.dataset.value; render(); },
   payMetaMask: (el) => run(async () => {
     const txid = await payWithEthWallet(state.deposit.asset, el.dataset.to, el.dataset.amount);
@@ -340,6 +353,15 @@ async function watchDeposit() {
     } catch {}
   }, 10000);
 }
+// Start a panel slide after a render: the track is drawn at its old position, then moved.
+function slide() {
+  const t = main.querySelector('.slider .track'); if (!t) return;
+  const dir = t.dataset.anim; if (!dir) return;
+  t.style.transition = 'none'; t.classList.toggle('two', dir === 'out');
+  void t.offsetWidth; // flush the starting position so the move below animates
+  t.style.transition = ''; t.classList.toggle('two', dir === 'in');
+  if (state.deposit) state.deposit.anim = '';
+}
 async function loadIssuers(asset) { try { state.issuers = (await j('/issuers')).filter((i) => i.asset === asset); } catch { state.issuers = []; } render(); }
 async function loadActivity() { if (me()) { state.activity = await j(`/activity/${me()}`); render(); } }
 
@@ -458,7 +480,7 @@ const views = {
       ${buy}`;
   },
   deposit: () => {
-    const d = state.deposit || (state.deposit = { asset: 'eth:USDC', unit: 'native' });
+    const d = state.deposit || (state.deposit = { asset: 'eth:USDC', unit: 'native', step: 'pick' });
     const a = assets[d.asset]; const chain = CHAIN[a?.chain] || '';
     if (d.pays) {
       return `
@@ -476,20 +498,32 @@ const views = {
           <button class="link" data-action="depositDone">Done</button>
         </div>`;
     }
+    // Two panels that slide: pick the coin, then type the amount.
+    const rows = [['eth:USDC', 'USD Coin', 'on Ethereum · pay with MetaMask or any wallet'], ['btc:BTC', 'Bitcoin', 'on Bitcoin · one confirmation']];
+    const chosen = rows.find((r) => r[0] === d.asset) || rows[0];
+    const step2 = d.step === 'amount';
     return `
       <h2>Deposit</h2>
-      <div class="row center">${[['eth:USDC', 'USDC on Ethereum'], ['btc:BTC', 'Bitcoin']].map(([id, label]) => `<button class="pill ${id === d.asset ? 'primary' : ''}" data-action="depositAsset" data-value="${id}">${coinIcon(id)}${label}</button>`).join('')}</div>
-      <form data-form="deposit" class="stack">
-        ${d.asset === 'btc:BTC' ? `
-        <div class="big-amount">
-          <span class="grow"></span>
-          <span class="entry"><span class="prefix ${d.unit === 'usd' ? '' : 'hidden'}">$</span><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"><span class="suffix ${d.unit === 'btc' ? '' : 'hidden'}">BTC</span></span>
-          <span class="grow"><button type="button" class="swap-unit" data-action="depositUnit" data-value="${d.unit === 'usd' ? 'btc' : 'usd'}" aria-label="Switch between dollars and bitcoin">⇅</button></span>
+      <div class="slider"><div class="track ${step2 ? 'two' : ''}" data-anim="${d.anim || ''}">
+        <div class="pane">
+          ${rows.map(([id, name, sub]) => `<button type="button" class="optrow" data-action="depositPick" data-value="${id}">${coinIcon(id)}<span class="txt"><b>${name}</b><span class="sub">${sub}</span></span><span class="chev">›</span></button>`).join('')}
         </div>
-        <p class="muted center" id="dep-equiv">${d.unit === 'usd' ? '0 BTC' : '$0'}</p>` : `
-        <div class="field"><input class="amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required></div>`}
-        <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Deposit</button>
-      </form>`;
+        <div class="pane">
+          <button type="button" class="link back" data-action="depositBack">‹ ${chosen[1]}</button>
+          <form data-form="deposit" class="stack">
+            ${d.asset === 'btc:BTC' ? `
+            <div class="big-amount">
+              <span class="grow"></span>
+              <span class="entry"><span class="prefix ${d.unit === 'usd' ? '' : 'hidden'}">$</span><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"><span class="suffix ${d.unit === 'btc' ? '' : 'hidden'}">BTC</span></span>
+              <span class="grow"><button type="button" class="swap-unit" data-action="depositUnit" data-value="${d.unit === 'usd' ? 'btc' : 'usd'}" aria-label="Switch between dollars and bitcoin">⇅</button></span>
+            </div>
+            <p class="muted center" id="dep-equiv">${d.unit === 'usd' ? '0 BTC' : '$0'}</p>` : `
+            <div class="big-amount"><span class="grow"></span><span class="entry"><span class="prefix">$</span><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"></span><span class="grow"></span></div>
+            <p class="muted center">USDC on Ethereum</p>`}
+            <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Deposit</button>
+          </form>
+        </div>
+      </div></div>`;
   },
   withdraw: () => {
     const held = (state.info?.assets || []).filter((x) => x.amount > 0);
