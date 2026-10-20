@@ -122,3 +122,4 @@ body.embedded main.wide { padding-top: 16px; }
 .seg.small { margin: 0 0 0 6px; padding: 2px; }
 .seg.small button { font-size: 13px; padding: 4px 12px; font-weight: 500; }
 #d-qr svg { width: 120px; display: block; background: #fff; border-radius: 6px; }
+.swap-unit { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--line); color: var(--fg); font-size: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-left: 8px; }

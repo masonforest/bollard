@@ -173,17 +173,31 @@ const USDC = 'eth:USDC';
 function setSide(v) { side = v; $('s-buy').classList.toggle('on', v === 'buy'); $('s-sell').classList.toggle('on', v === 'sell'); scheduleSimple(); }
 $('s-buy').onclick = () => setSide('buy'); $('s-sell').onclick = () => setSide('sell');
 $('s-amount').addEventListener('input', scheduleSimple);
+// Type the amount in dollars or in the coin; the book converts either way.
+let unitUsd = false;
+$('s-swap').onclick = () => { unitUsd = !unitUsd; computeSimple(); };
 $('s-asset').addEventListener('input', scheduleSimple);
 function scheduleSimple() { clearTimeout(simpleTimer); simpleTimer = setTimeout(computeSimple, 200); }
+let computeSeq = 0;
 async function computeSimple() {
+  const run = ++computeSeq; // a slower, older run must not overwrite a newer one
   plan = null; $('s-error').textContent = '';
   const asset = $('s-asset').value; const a = assets[asset]; if (!a) return;
-  $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`; $('s-unit').textContent = a.symbol;
-  let qty; try { qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
-  if (qty <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
+  $('s-go').textContent = `${side === 'buy' ? 'Buy' : 'Sell'} ${a.symbol}`;
+  $('s-prefix').classList.toggle('hidden', !unitUsd); $('s-unit').textContent = unitUsd ? '' : a.symbol; $('s-amount').placeholder = unitUsd ? '0.00' : '0.0';
+  let qty = 0n, dollars = 0n;
+  try { if (unitUsd) dollars = toAtoms($('s-amount').value || '0', USDC); else qty = toAtoms($('s-amount').value || '0', asset); } catch (e) { $('s-quote').textContent = e.message; $('s-go').disabled = true; return; }
+  if (qty <= 0n && dollars <= 0n) { $('s-quote').textContent = 'Enter an amount.'; $('s-go').disabled = true; return; }
   const b = await j(`/book?market=${encodeURIComponent(asset + '/' + USDC)}`);
+  if (run !== computeSeq) return;
   // Buying takes asks, cheapest first; selling takes bids, highest first.
   const orders = side === 'buy' ? [...(b.asks || [])].sort((x, y) => x.price - y.price) : [...(b.bids || [])].sort((x, y) => y.price - x.price);
+  if (unitUsd) {
+    // Walk the book until the dollars are used up, and that is the quantity.
+    let budget = dollars;
+    for (const o of orders) { if (budget <= 0n) break; const affordable = (budget * 100000000n) / BigInt(o.price); const take = affordable < BigInt(o.qty_left) ? affordable : BigInt(o.qty_left); qty += take; budget -= quoteAmount(take, o.price); }
+    if (qty <= 0n) { $('s-quote').textContent = `Nobody is ${side === 'buy' ? 'selling' : 'buying'} ${a.symbol} right now.`; $('s-go').disabled = true; return; }
+  }
   let left = qty, quote = 0n; const fills = [];
   for (const o of orders) { if (left <= 0n) break; const take = left < BigInt(o.qty_left) ? left : BigInt(o.qty_left); fills.push({ order: o, qty: take }); quote += quoteAmount(take, o.price); left -= take; }
   if (!fills.length) { $('s-quote').textContent = `Nobody is ${side === 'buy' ? 'selling' : 'buying'} ${a.symbol} right now.`; $('s-go').disabled = true; return; }
@@ -191,7 +205,7 @@ async function computeSimple() {
   const have = side === 'buy' ? quote : qty; const haveAsset = side === 'buy' ? USDC : asset;
   const mine = myBalance(haveAsset);
   const avg = fills.length ? Number(quote) / Number(qty - left) * 1e8 : 0;
-  $('s-quote').innerHTML = `${side === 'buy' ? 'You pay' : 'You get'} <b>${fromAtoms(quote, USDC)}</b>` + (left > 0n ? ` for ${fromAtoms(qty - left, asset)}; only that much is on the book` : '') + ` · ${fmt(priceToHuman(BigInt(Math.round(avg)), asset, USDC), 6)} USDC/${a.symbol}` + (mine !== null && mine < have ? ` · you have ${fromAtoms(mine, haveAsset)}` : '');
+  $('s-quote').innerHTML = (unitUsd ? `${side === 'buy' ? 'You get' : 'You sell'} <b>${fromAtoms(qty - left, asset)}</b> for ${fromAtoms(quote, USDC)}` : `${side === 'buy' ? 'You pay' : 'You get'} <b>${fromAtoms(quote, USDC)}</b>`) + (left > 0n ? ` for ${fromAtoms(qty - left, asset)}; only that much is on the book` : '') + ` · ${fmt(priceToHuman(BigInt(Math.round(avg)), asset, USDC), 6)} USDC/${a.symbol}` + (mine !== null && mine < have ? ` · you have ${fromAtoms(mine, haveAsset)}` : '');
   $('s-go').disabled = !me() || (mine !== null && mine < have);
 }
 let balances = null;
