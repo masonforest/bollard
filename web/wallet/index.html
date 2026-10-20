@@ -538,6 +538,7 @@ async function quoteSell() {
   let bids = [];
   try { bids = ((await j(`/book?market=${encodeURIComponent(sl.asset + '/eth:USDC')}`)).bids || []).sort((x, y) => y.price - x.price); } catch {}
   if (run !== sl.run) return;
+  if (!bids.length) { sl.quote = { text: `Nobody is buying ${a.symbol} right now.`, fills: [] }; render(); return; }
   let qty = 0n;
   try {
     if (sl.unit === 'usd') { let budget = toAtoms(raw, 'eth:USDC'); for (const o of bids) { if (budget <= 0n) break; const can = (budget * 100000000n) / BigInt(o.price); const take = can < BigInt(o.qty_left) ? can : BigInt(o.qty_left); qty += take; budget -= (take * BigInt(o.price)) / 100000000n; } }
