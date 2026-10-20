@@ -70,12 +70,14 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .optrow .sub { color: var(--muted); font-size: 13px; }
 .optrow .chev { color: var(--muted); font-size: 26px; line-height: 1; }
 .back { font-size: 15px; color: var(--muted); margin-bottom: 14px; align-self: flex-start; }
-.whatis { position: relative; display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; }
+.balrow { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.balrow h1 { margin: 0; }
+.whatis { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .whatis .logo { width: 26px; height: 26px; }
 .qmark { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .qmark:hover { border-color: var(--accent); color: var(--accent); }
-.whatis .tip { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: var(--fg); color: var(--bg); font-size: 13px; padding: 8px 12px; border-radius: 10px; white-space: nowrap; z-index: 3; }
-.whatis .tip::before { content: ''; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-bottom-color: var(--fg); }
+.whatis .tip { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--fg); color: var(--bg); font-size: 13px; padding: 8px 12px; border-radius: 10px; white-space: nowrap; z-index: 3; }
+.whatis .tip::before { content: ''; position: absolute; bottom: 100%; right: 14px; border: 6px solid transparent; border-bottom-color: var(--fg); }
 .big-amount { display: flex; align-items: center; }
 .big-amount .grow { flex: 1; display: flex; justify-content: flex-end; }
 .big-amount .entry { display: inline-flex; align-items: baseline; font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
@@ -486,9 +488,9 @@ const views = {
         </div>
       </form>`;
     return `
-      <div class="stack center">
+      <div class="balrow">
         <h1>${money(balanceOf(c), c)}</h1>
-        <div class="whatis">${coinIcon(c)}<button type="button" class="qmark" data-action="whatis" aria-label="What is this?">?</button>${state.whatis ? `<span class="tip">${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}${c === 'eth:USDC' ? ': US dollars as USDC, the Ethereum stablecoin' : ''}</span>` : ''}</div>
+        <span class="whatis">${coinIcon(c)}<button type="button" class="qmark" data-action="whatis" aria-label="What is this?">?</button>${state.whatis ? `<span class="tip">${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}${c === 'eth:USDC' ? ': US dollars as USDC, the Ethereum stablecoin' : ''}</span>` : ''}</span>
       </div>
       ${body}
       ${others.length ? `<ul class="assets">${others.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}${NAMES[h.asset] || h.asset}</span><span>${money(h.amount, h.asset)}</span></li>`).join('')}</ul>` : ''}`;
