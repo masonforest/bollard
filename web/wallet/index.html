@@ -62,6 +62,12 @@ li .sub { display: block; color: var(--muted); font-size: 13px; }
 .slider .track { display: flex; width: 200%; transition: transform .32s cubic-bezier(.2,.8,.2,1); }
 .slider .track.two { transform: translateX(-50%); }
 .slider .pane { width: 50%; flex: none; padding: 2px; }
+.rowbtn { display: flex; align-items: center; justify-content: space-between; width: 100%; font: inherit; color: var(--fg); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.rowbtn .right { display: inline-flex; align-items: center; gap: 8px; }
+.rowbtn .chev { color: var(--muted); font-size: 22px; line-height: 1; }
+.assets li:has(.rowbtn) { padding: 0; }
+.assets li .rowbtn { padding: 12px 0; }
+.slider .track[data-pos] { transition: none; }
 .optrow { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; }
 .optrow:hover { border-color: var(--accent); }
 .optrow .logo { width: 40px; height: 40px; }
@@ -247,6 +253,9 @@ const actions = {
   }),
   signout: () => { localStorage.removeItem('bollard.passkey'); state.key = null; state.info = null; render(); },
   menu: () => { state.menu = !state.menu; render(); },
+  sellPick: (el) => { if (el.dataset.value === 'eth:USDC') return; state.sell = { asset: el.dataset.value, unit: 'usd', typed: '' }; render(); springSlide(-50, 0); },
+  sellBack: () => { springSlide(0, -50, () => { state.sell = null; render(); }); },
+  sellUnit: (el) => { state.sell.unit = el.dataset.value; state.sell.typed = ''; state.sell.quote = null; render(); },
   connectWallet: () => run(async () => { await connectEthWallet(true); }),
   buy: () => { state.buying = true; render(); },
   buyDone: () => { state.buying = false; render(); },
@@ -308,9 +317,9 @@ const forms = {
     let left;
     if (asset === 'btc:BTC' && d.unit === 'usd') {
       if (!state.btcPrice) throw new Error('No bitcoin price on the book yet; switch to BTC.');
-      const usd = toAtoms(form.amount.value, 'eth:USDC');
+      const usd = toAtoms((form.amount_usd || form.amount).value, 'eth:USDC');
       left = (usd * 100000000n) / BigInt(Math.round(state.btcPrice));
-    } else left = toAtoms(form.amount.value, asset);
+    } else left = toAtoms((form.amount_btc || form.amount).value, asset);
     if (left <= 0n) throw new Error('Enter an amount.');
     if (left < BigInt(a.min_quantity)) throw new Error(`The smallest ${a.symbol} deposit is ${money(a.min_quantity, asset)}${asset === 'btc:BTC' && state.btcPrice ? ` (about ${money((BigInt(a.min_quantity) * BigInt(Math.round(state.btcPrice))) / 100000000n, 'eth:USDC')})` : ''}.`);
     const exits = ((await j(`/book?market=${encodeURIComponent(asset + '/' + asset)}`)).deposits || []).filter((o) => o.account !== me());
@@ -331,6 +340,13 @@ const forms = {
       for (const m of pays) { try { (d.sent ||= {})[m.taker_pay_to] = await payWithEthWallet(asset, m.taker_pay_to, m.taker_amount); render(); } catch (e) { state.error = e.message; render(); break; } }
 
     }
+  }),
+  sell: (form) => run(async () => {
+    const sl = state.sell; const q = sl?.quote; if (!q?.fills?.length) throw new Error('Enter an amount.');
+    let got = 0n, sold = 0n;
+    for (const f of q.fills) { await tx(TxType.Claim, { order_id: hex.dec(f.order.id), quantity: f.qty, receive_address: '' }); sold += f.qty; got += (f.qty * BigInt(f.order.price)) / 100000000n; }
+    state.success = `Sold ${money(sold, sl.asset)} for ${money(got, 'eth:USDC')}`; state.sell = null;
+    await refresh();
   }),
   withdraw: (form) => run(async () => {
     const asset = form.asset.value; const amount = toAtoms(form.amount.value, asset);
@@ -392,6 +408,31 @@ async function watchDeposit() {
   }, 10000);
 }
 // Start a panel slide after a render: the track is drawn at its old position, then moved.
+// A damped spring, the same numbers react-spring uses by default. Drives one value from where it is to a target.
+function springTo(el, prop, to, unit, opts = {}) {
+  const { stiffness = 170, damping = 26, mass = 1 } = opts;
+  const st = el.__spring || (el.__spring = { v: 0, x: to, raf: 0 });
+  if (opts.from !== undefined) st.x = opts.from;
+  cancelAnimationFrame(st.raf);
+  // A hidden tab never paints frames; land at once so nothing waits on an animation that will not run.
+  if (document.hidden) { st.x = to; st.v = 0; el.style[prop] = `translateX(${to}${unit})`; if (opts.onRest) opts.onRest(); return; }
+  let last = performance.now();
+  const step = (now) => {
+    const dt = Math.min(0.064, (now - last) / 1000); last = now;
+    const a = (-stiffness * (st.x - to) - damping * st.v) / mass;
+    st.v += a * dt; st.x += st.v * dt;
+    const done = Math.abs(st.v) < 0.01 && Math.abs(st.x - to) < 0.01;
+    if (done) { st.x = to; st.v = 0; }
+    el.style[prop] = `translateX(${st.x}${unit})`;
+    if (!done) st.raf = requestAnimationFrame(step); else if (opts.onRest) opts.onRest();
+  };
+  st.raf = requestAnimationFrame(step);
+}
+// Portfolio panels move on a spring; the track remembers where it is so a re-render does not snap it back.
+function springSlide(to, from, onRest) {
+  const t = main.querySelector('.slider .track'); if (!t) return;
+  springTo(t, 'transform', to, '%', { from, onRest });
+}
 function slide() {
   const t = main.querySelector('.slider .track'); if (!t) return;
   const dir = t.dataset.anim; if (!dir) return;
@@ -448,9 +489,13 @@ function render() {
   // Background refreshes re-render; keep whatever the user has typed, and where the caret was.
   const typed = [...main.querySelectorAll('input[name], select[name]')].map((el) => ({ name: el.name, value: el.value, focused: document.activeElement === el, pos: el.selectionStart }));
   main.innerHTML = (state.busy ? '<p class="center muted"><span class="spinner"></span>Working…</p>' : '') + v() + (state.error ? `<p class="error center">${esc(state.error)}</p>` : '') + (state.qr ? `<div class="overlay" data-action="closeqr"><div class="qr big">${qrSvg(state.qr)}</div><p class="muted">Tap to close</p></div>` : '');
+  { const t = main.querySelector('.slider .track[data-pos]'); if (t && !t.__spring) { t.style.transform = `translateX(${t.dataset.pos}%)`; } else if (t && t.__spring) { const st = t.__spring; if (!st.raf || Math.abs(st.v) < 0.01) t.style.transform = `translateX(${st.x}%)`; } }
   for (const t of typed) {
     const el = main.querySelector(`[name="${t.name}"]`); if (!el || el.type === 'hidden' || !t.value) continue;
-    el.value = t.value; el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.value = t.value;
+    // Amount fields size themselves and quote on input; restoring must not re-fire that, or it loops.
+    if (el.dataset.input) { el.style.width = Math.max(1, el.value.length) + 'ch'; const eq = document.getElementById('dep-equiv'); if (eq && el.dataset.input === 'depositAmount') el.dispatchEvent(new Event('input', { bubbles: true })); }
+    else el.dispatchEvent(new Event('input', { bubbles: true }));
     if (t.focused) { el.focus(); try { el.setSelectionRange(t.pos, t.pos); } catch {} }
   }
   nav.innerHTML = `<span class="brand">Bollard</span><div class="items${state.menu ? ' open' : ''}">` + [['home', 'Home'], ['portfolio', 'Portfolio'], ['deposit', 'Deposit'], ['withdraw', 'Withdraw'], ['activity', 'History'], ['settings', 'Settings']].map(([t, label]) => `<button data-action="tab" data-value="${t}" class="${state.view === t ? 'active' : ''}">${label}</button>`).join('') + `</div><span class="bal">${money(balanceOf('btc:BTC'), 'btc:BTC')} · ${money(balanceOf('eth:USDC'), 'eth:USDC')}</span>${hasEthWallet() ? (state.ethAccount ? `<button class="walletbtn on" data-action="connectWallet" title="${esc(state.ethAccount)}">${short(state.ethAccount, 8)}</button>` : `<button class="walletbtn" data-action="connectWallet">Connect wallet</button>`) : ''}<button class="menu-btn" data-action="menu" aria-label="Menu">${state.menu ? '✕' : '☰'}</button>`;
@@ -466,6 +511,45 @@ function acceptView() {
     <button class="primary" data-action="accept" style="font-size:20px;padding:16px 28px" ${state.busy ? 'disabled' : ''}>Accept ${total.map((x) => money(x.amount, x.asset)).join(' + ')}</button>
     <p class="muted center">It lands in your account as ${NAMES[currency()] || currency()}.</p>
     <button class="link" data-action="dismissAccept">Not now</button></div>`;
+}
+// Selling an asset from the portfolio: the amount in dollars or the coin, priced against the book's bids.
+function sellPane(sl) {
+  const a = assets[sl.asset]; const sym = a?.symbol || sl.asset;
+  const q = sl.quote;
+  const usd = sl.unit === 'usd';
+  return `
+    <button type="button" class="link back" data-action="sellBack">‹ ${esc(NAMES[sl.asset] || sym)}</button>
+    <p class="muted center" style="margin-top:-6px">You hold ${money(balanceOf(sl.asset), sl.asset)}</p>
+    <form data-form="sell" class="stack">
+      <div class="big-amount">
+        <span class="grow"></span>
+        <span class="entry"><span class="prefix ${usd ? '' : 'hidden'}">$</span><input name="amount_${usd ? 'usd' : 'coin'}" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="sellAmount" style="width:1ch"><span class="suffix ${usd ? 'hidden' : ''}">${esc(sym)}</span></span>
+        <span class="grow"><button type="button" class="swap-unit" data-action="sellUnit" data-value="${usd ? 'native' : 'usd'}" aria-label="Switch unit">⇅</button></span>
+      </div>
+      <p class="muted center" id="sell-quote">${q ? esc(q.text) : 'Enter an amount.'}</p>
+      <button class="primary" type="submit" ${state.busy || !q || !q.fills?.length ? 'disabled' : ''}>Sell ${esc(sym)}</button>
+    </form>`;
+}
+async function quoteSell() {
+  const sl = state.sell; if (!sl) return;
+  const run = (sl.run = (sl.run || 0) + 1);
+  const a = assets[sl.asset]; const raw = (sl.typed || '').trim();
+  if (!raw || Number(raw) === 0) { sl.quote = null; render(); return; }
+  let bids = [];
+  try { bids = ((await j(`/book?market=${encodeURIComponent(sl.asset + '/eth:USDC')}`)).bids || []).sort((x, y) => y.price - x.price); } catch {}
+  if (run !== sl.run) return;
+  let qty = 0n;
+  try {
+    if (sl.unit === 'usd') { let budget = toAtoms(raw, 'eth:USDC'); for (const o of bids) { if (budget <= 0n) break; const can = (budget * 100000000n) / BigInt(o.price); const take = can < BigInt(o.qty_left) ? can : BigInt(o.qty_left); qty += take; budget -= (take * BigInt(o.price)) / 100000000n; } }
+    else qty = toAtoms(raw, sl.asset);
+  } catch (e) { sl.quote = { text: e.message, fills: [] }; render(); return; }
+  if (qty > balanceOf(sl.asset)) qty = balanceOf(sl.asset);
+  if (qty < BigInt(a.min_quantity)) { sl.quote = { text: `The smallest ${a.symbol} trade is ${money(a.min_quantity, sl.asset)}.`, fills: [] }; render(); return; }
+  let left = qty, usdc = 0n; const fills = [];
+  for (const o of bids) { if (left <= 0n) break; const take = left < BigInt(o.qty_left) ? left : BigInt(o.qty_left); fills.push({ order: o, qty: take }); usdc += (take * BigInt(o.price)) / 100000000n; left -= take; }
+  if (!fills.length) { sl.quote = { text: `Nobody is buying ${a.symbol} right now.`, fills: [] }; render(); return; }
+  sl.quote = { fills, qty: qty - left, usdc, text: `You get ${money(usdc, 'eth:USDC')} for ${money(qty - left, sl.asset)}${left > 0n ? '; only that much is bid for' : ''}` };
+  render();
 }
 const views = {
   home: () => {
@@ -515,11 +599,18 @@ const views = {
       <button class="primary" data-action="buy" ${canPay ? '' : 'disabled'} style="width:min(300px,100%)">Buy an asset</button>
       ${canPay ? '' : '<p class="muted center">Nothing to pay with yet. <a href="#deposit" class="golink" data-action="tab" data-value="deposit">Deposit</a> first.</p>'}</div>`;
     if (!held.length) return `<h2>Portfolio</h2><p class="muted center">You don't have any assets yet.</p>${buy}`;
+    const sell = state.sell;
+    const list = `
+      <div class="stack center"><h1>${money(total, 'eth:USDC')}</h1></div>
+      <ul class="assets">${held.map((h) => `<li><button type="button" class="rowbtn" data-action="sellPick" data-value="${h.asset}"><span class="withicon">${coinIcon(h.asset)}<span>${NAMES[h.asset] || h.asset}<span class="sub">${money(h.amount, h.asset)}</span></span></span><span class="right">${value(h) !== null ? money(value(h), 'eth:USDC') : '<span class="muted">no price yet</span>'}${h.asset === 'eth:USDC' ? '' : '<span class="chev">›</span>'}</span></button></li>`).join('')}</ul>
+      ${buy}`;
+    const pane2 = sell ? sellPane(sell) : '';
     return `
       <h2>Portfolio</h2>
-      <div class="stack center"><h1>${money(total, 'eth:USDC')}</h1></div>
-      <ul class="assets">${held.map((h) => `<li><span class="withicon">${coinIcon(h.asset)}<span>${NAMES[h.asset] || h.asset}<span class="sub">${money(h.amount, h.asset)}</span></span></span><span>${value(h) !== null ? money(value(h), 'eth:USDC') : '<span class="muted">no price yet</span>'}</span></li>`).join('')}</ul>
-      ${buy}`;
+      <div class="slider"><div class="track" data-pos="${sell ? '-50' : '0'}">
+        <div class="pane">${list}</div>
+        <div class="pane">${pane2}</div>
+      </div></div>`;
   },
   deposit: () => {
     const d = state.deposit || (state.deposit = { asset: 'eth:USDC', unit: 'native', step: 'pick' });
@@ -556,7 +647,7 @@ const views = {
             ${d.asset === 'btc:BTC' ? `
             <div class="big-amount">
               <span class="grow"></span>
-              <span class="entry"><span class="prefix ${d.unit === 'usd' ? '' : 'hidden'}">$</span><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"><span class="suffix ${d.unit === 'btc' ? '' : 'hidden'}">BTC</span></span>
+              <span class="entry"><span class="prefix ${d.unit === 'usd' ? '' : 'hidden'}">$</span><input name="amount_${d.unit}" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"><span class="suffix ${d.unit === 'btc' ? '' : 'hidden'}">BTC</span></span>
               <span class="grow"><button type="button" class="swap-unit" data-action="depositUnit" data-value="${d.unit === 'usd' ? 'btc' : 'usd'}" aria-label="Switch between dollars and bitcoin">⇅</button></span>
             </div>
             <p class="muted center" id="dep-equiv">${d.unit === 'usd' ? '0 BTC' : '$0'}</p>` : `
@@ -619,6 +710,8 @@ main.addEventListener('click', (e) => { const el = e.target.closest('[data-actio
 nav.addEventListener('click', (e) => { const el = e.target.closest('[data-action]'); const fn = el && actions[el.dataset.action]; if (fn) fn(el); });
 main.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (!el) return; if (el.dataset.change === 'noop') return; if (el.name === 'asset' && state.view === 'withdraw') { loadIssuers(el.value); return; } if (el.dataset.change === 'fromChain') state.from = { chain: el.value }; if (el.dataset.change === 'fromAsset') state.from = { chain: sendFrom().chain, asset: el.value }; render(); });
 main.addEventListener('input', (e) => {
+  const sEl = e.target.closest('[data-input=sellAmount]');
+  if (sEl && state.sell) { sEl.style.width = Math.max(1, sEl.value.length) + 'ch'; state.sell.typed = sEl.value; clearTimeout(state.sell.timer); state.sell.timer = setTimeout(quoteSell, 250); return; }
   const el = e.target.closest('[data-input=depositAmount]'); if (!el) return;
   el.style.width = Math.max(1, el.value.length) + 'ch';
   const out = document.getElementById('dep-equiv'); if (!out || state.deposit?.asset !== 'btc:BTC') return;
