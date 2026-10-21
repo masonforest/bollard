@@ -23,6 +23,8 @@ pub struct RunArgs {
     /// Ethereum JSON-RPC endpoint
     #[arg(long, env = "ETH_RPC", default_value = "https://ethereum-rpc.publicnode.com")]
     pub eth_rpc: String,
+    #[arg(long, env = "BASE_RPC", default_value = "https://base-rpc.publicnode.com")]
+    pub base_rpc: String,
     /// Bitcoin height the network starts at. The genesis leader leads this epoch.
     #[arg(long, env = "GENESIS_HEIGHT")]
     pub genesis_height: u32,

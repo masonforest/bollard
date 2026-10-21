@@ -31,6 +31,9 @@ pub const ASSETS: &[AssetInfo] = &[
     AssetInfo { id: "eth:ETH", chain: "eth", symbol: "ETH", decimals: 9, min_quantity: 10_000, contract: None, atom_scale: 1_000_000_000 },
     AssetInfo { id: "eth:USDC", chain: "eth", symbol: "USDC", decimals: 6, min_quantity: 10_000, contract: Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"), atom_scale: 1 },
     AssetInfo { id: "eth:USDT", chain: "eth", symbol: "USDT", decimals: 6, min_quantity: 10_000, contract: Some("0xdac17f958d2ee523a2206206994597c13d831ec7"), atom_scale: 1 },
+    AssetInfo { id: "base:USDC", chain: "base", symbol: "USDC", decimals: 6, min_quantity: 10_000, contract: Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"), atom_scale: 1 },
+    // Gauntlet USDC Prime, a Morpho vault on Base: an ERC-4626 share with 18 decimals. One atom is a millionth of a share.
+    AssetInfo { id: "base:gtUSDCp", chain: "base", symbol: "USDC Prime", decimals: 6, min_quantity: 10_000, contract: Some("0x050ce30b927da55177a4914ec73480238bad56f0"), atom_scale: 1_000_000_000_000 },
 ];
 
 pub fn asset(id: &str) -> Option<&'static AssetInfo> {
@@ -52,6 +55,7 @@ pub const CHAINS: &[ChainParams] = &[
     ChainParams { id: "blrd", taker_deadline: 0, maker_deadline: 0, depth: 0 },
     ChainParams { id: "btc", taker_deadline: 3, maker_deadline: 6, depth: 3 },
     ChainParams { id: "eth", taker_deadline: 1, maker_deadline: 3, depth: 0 },
+    ChainParams { id: "base", taker_deadline: 1, maker_deadline: 3, depth: 0 },
 ];
 
 pub fn chain_params(id: &str) -> ChainParams {
@@ -84,11 +88,21 @@ pub enum PaymentStatus {
 pub struct Chains {
     pub btc: btc::BtcRpc,
     pub eth: evm::EvmRpc,
+    pub base: evm::EvmRpc,
 }
 
 impl Chains {
-    pub fn new(btc_url: &str, eth_url: &str, esplora: &str) -> Self {
-        Self { btc: btc::BtcRpc::new(btc_url, esplora), eth: evm::EvmRpc::new(eth_url) }
+    pub fn new(btc_url: &str, eth_url: &str, base_url: &str, esplora: &str) -> Self {
+        Self { btc: btc::BtcRpc::new(btc_url, esplora), eth: evm::EvmRpc::new(eth_url), base: evm::EvmRpc::new(base_url) }
+    }
+
+    /// The EVM adapter for a chain id.
+    pub fn evm(&self, chain: &str) -> Option<&evm::EvmRpc> {
+        match chain {
+            "eth" => Some(&self.eth),
+            "base" => Some(&self.base),
+            _ => None,
+        }
     }
 
     /// Look for a payment of at least `amount` atoms of `asset` to `to` made
@@ -96,7 +110,7 @@ impl Chains {
     pub async fn find_payment(&self, asset: &AssetInfo, to: &str, amount: u64, since_ms: u64) -> Result<Option<String>> {
         match asset.chain {
             "btc" => self.btc.find_payment(to, amount, since_ms).await,
-            "eth" => self.eth.find_payment(asset, to, amount, since_ms).await,
+            "eth" | "base" => self.evm(asset.chain).expect("evm").find_payment(asset, to, amount, since_ms).await,
             other => Err(anyhow!("no adapter for chain {other}")),
         }
     }
@@ -105,7 +119,7 @@ impl Chains {
     pub async fn check_payment(&self, asset: &AssetInfo, txid: &str, to: &str, amount: u64) -> Result<PaymentStatus> {
         match asset.chain {
             "btc" => self.btc.check_payment(txid, to, amount).await,
-            "eth" => self.eth.check_payment(asset, txid, to, amount).await,
+            "eth" | "base" => self.evm(asset.chain).expect("evm").check_payment(asset, txid, to, amount).await,
             other => Err(anyhow!("no adapter for chain {other}")),
         }
     }
@@ -119,7 +133,7 @@ impl Chains {
         };
         match asset.chain {
             "btc" => self.btc.paid_from(txid, &candidates).await,
-            "eth" => self.eth.paid_from(asset, txid, &candidates).await,
+            "eth" | "base" => self.evm(asset.chain).expect("evm").paid_from(asset, txid, &candidates).await,
             other => Err(anyhow!("no adapter for chain {other}")),
         }
     }
@@ -129,7 +143,7 @@ impl Chains {
         let p = chain_params(chain);
         match chain {
             "btc" => self.btc.is_deep(txid, block_hash, p.depth).await,
-            "eth" => self.eth.is_deep(txid, block_hash, block_height).await,
+            "eth" | "base" => self.evm(chain).expect("evm").is_deep(txid, block_hash, block_height).await,
             other => Err(anyhow!("no adapter for chain {other}")),
         }
     }
@@ -143,7 +157,7 @@ pub fn validate_address(addr: &str, chain: &str) -> Result<()> {
             bitcoin::Address::from_str(addr).map_err(|e| anyhow!("bad bitcoin address: {e}"))?.require_network(bitcoin::Network::Bitcoin).map_err(|_| anyhow!("not a mainnet bitcoin address"))?;
             Ok(())
         }
-        "eth" => {
+        "eth" | "base" => {
             let h = addr.strip_prefix("0x").ok_or_else(|| anyhow!("ethereum addresses start with 0x"))?;
             if h.len() != 40 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
                 bail!("bad ethereum address");
@@ -170,7 +184,7 @@ pub fn receive_address(given: &str, chain: &str, index: u32) -> Result<String> {
     let child = xpub.derive_pub(&crate::crypto::SECP, &path)?;
     match chain {
         "btc" => Ok(bitcoin::Address::p2wpkh(&bitcoin::CompressedPublicKey(child.public_key), bitcoin::Network::Bitcoin).to_string()),
-        "eth" => {
+        "eth" | "base" => {
             use sha3::{Digest, Keccak256};
             let uncompressed = child.public_key.serialize_uncompressed();
             let hash = Keccak256::digest(&uncompressed[1..]);

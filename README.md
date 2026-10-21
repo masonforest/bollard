@@ -48,7 +48,7 @@ bollard tx place-order --market btc:BTC/eth:USDC --side sell --settle 0 --quanti
 
 The website is for holders and takers only: create a passkey, deposit, send, take orders, exercise to withdraw. Making happens here, in the CLI, because a maker must act while nobody has a browser open.
 
-Amounts are in atoms: sats, gwei, 10^-6 USDC, rill (10^-8 BLRD). Prices are quote atoms per 100,000,000 base atoms.
+Amounts are in atoms: sats, gwei, 10^-6 USDC, 10^-6 of a vault share, rill (10^-8 BLRD). Assets: bitcoin; ETH, USDC and USDT on Ethereum; USDC and the Gauntlet USDC Prime vault share on Base. Prices are quote atoms per 100,000,000 base atoms.
 
 ## Layout
 

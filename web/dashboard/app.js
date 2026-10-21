@@ -100,8 +100,20 @@ async function loadMarkets() {
 }
 
 // ------------------------------------------------------------------ coins and the token picker
-const CHAIN_NAMES = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
-const ASSET_NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'USD Coin', 'BLRD': 'Bollard' };
+const CHAIN_NAMES = { btc: 'Bitcoin', eth: 'Ethereum', base: 'Base', blrd: 'Bollard' };
+const ASSET_NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'USD Coin', 'eth:USDT': 'Tether', 'base:USDC': 'USD Coin', 'base:gtUSDCp': 'USDC Prime (Morpho vault)', 'BLRD': 'Bollard' };
+// The Morpho vault behind USDC Prime, for the rate and the share price the wallet shows.
+const VAULT = { asset: 'base:gtUSDCp', address: '0x050cE30b927Da55177A4914EC73480238BAD56f0', chainId: 8453, url: 'https://app.morpho.org/base/vault/0x050cE30b927Da55177A4914EC73480238BAD56f0/gauntlet-usdc-prime' };
+let vaultInfo = null, vaultFetched = 0;
+async function loadVault() {
+  if (Date.now() - vaultFetched < 60000) return vaultInfo;
+  vaultFetched = Date.now();
+  try {
+    const r = await fetch('https://blue-api.morpho.org/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: `{ vaultV2ByAddress(address: "${VAULT.address}", chainId: ${VAULT.chainId}) { netApy apy sharePrice } }` }) });
+    vaultInfo = (await r.json()).data?.vaultV2ByAddress || null;
+  } catch { vaultInfo = null; }
+  return vaultInfo;
+}
 const coinClass = (a) => 'c-' + (a.symbol.toLowerCase() === 'usdc' || a.symbol.toLowerCase() === 'usdt' ? a.symbol.toLowerCase() : a.chain);
 const LOGOS = {
   'eth:USDC': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775CA"/><path fill="#fff" d="M20.5 18.6c0-2.3-1.4-3.1-4.2-3.5-2-.3-2.4-.8-2.4-1.7s.7-1.5 2-1.5c1.2 0 1.9.4 2.2 1.4.1.2.3.3.5.3h1.1c.3 0 .5-.2.4-.5-.3-1.5-1.4-2.6-3-2.9V8.8c0-.3-.2-.5-.5-.5h-1c-.3 0-.5.2-.5.5v1.4c-2 .3-3.3 1.6-3.3 3.3 0 2.2 1.3 3 4.1 3.4 1.9.3 2.5.7 2.5 1.8s-.9 1.7-2.2 1.7c-1.6 0-2.2-.7-2.4-1.6-.1-.2-.3-.4-.5-.4h-1.2c-.3 0-.5.2-.4.5.3 1.7 1.4 2.9 3.4 3.2v1.4c0 .3.2.5.5.5h1c.3 0 .5-.2.5-.5v-1.4c2-.3 3.4-1.7 3.4-3.5z"/><path fill="#fff" d="M12.6 25.6c-5.2-1.9-7.9-7.7-6-12.9 1-2.8 3.2-4.9 6-5.9.3-.1.4-.3.4-.6v-.9c0-.3-.1-.5-.4-.5h-.2C6 6.8 2.5 13.6 4.5 19.9c1.2 3.7 4.1 6.6 7.8 7.8.3.1.5 0 .6-.3v-1.2c0-.2-.1-.4-.3-.6zm7-19.9c-.3-.1-.5 0-.6.3v1.1c0 .2.1.4.3.6 5.2 1.9 7.9 7.7 6 12.9-1 2.8-3.2 4.9-6 5.9-.3.1-.4.3-.4.6v.9c0 .3.1.5.4.5h.2c6.4-2 9.9-8.8 7.9-15.1-1.2-3.8-4.1-6.7-7.8-7.7z"/></svg>`,
@@ -109,13 +121,16 @@ const LOGOS = {
   'eth:ETH': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#627EEA"/><path fill="#fff" fill-opacity=".6" d="M16 5v8.1l6.9 3.1z"/><path fill="#fff" d="M16 5l-6.9 11.2 6.9-3.1z"/><path fill="#fff" fill-opacity=".6" d="M16 21.7V27l6.9-9.6z"/><path fill="#fff" d="M16 27v-5.3l-6.9-4.3z"/><path fill="#fff" fill-opacity=".2" d="M16 20.4l6.9-4.2-6.9-3.1z"/><path fill="#fff" fill-opacity=".6" d="M9.1 16.2l6.9 4.2v-7.3z"/></svg>`,
   'eth:USDT': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#26A17B"/><path fill="#fff" d="M17.9 17.9v-.1c-.1 0-.7.1-1.9.1-1 0-1.7 0-1.9-.1v.1c-3.7-.2-6.5-.8-6.5-1.6s2.8-1.4 6.5-1.6v2.6c.3 0 1 .1 1.9.1 1.1 0 1.7-.1 1.9-.1v-2.6c3.7.2 6.5.8 6.5 1.6s-2.8 1.4-6.5 1.6zm0-3.5v-2.3h5.2V8.6H8.9v3.5h5.2v2.3c-4.2.2-7.4 1-7.4 2s3.2 1.8 7.4 2v7.5h3.8v-7.5c4.2-.2 7.4-1 7.4-2s-3.2-1.8-7.4-2z"/></svg>`,
   'BLRD': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#1F5FBF"/><text x="16" y="22" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif">B</text></svg>`,
+  'base:gtUSDCp': `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775CA"/><circle cx="16" cy="16" r="10" fill="none" stroke="#fff" stroke-width="2.2" stroke-dasharray="44 20" transform="rotate(-60 16 16)"/><text x="16" y="20.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif">%</text></svg>`,
+  base: `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#0052FF"/><circle cx="16" cy="16" r="9" fill="none" stroke="#fff" stroke-width="4" stroke-dasharray="44 13" transform="rotate(180 16 16)"/></svg>`,
 };
+LOGOS['base:USDC'] = LOGOS['eth:USDC'];
 function coinIcon(a, large = false) {
   return `<span class="coin ${large ? 'lg' : ''}">${LOGOS[a.id] || ''}</span>`;
 }
 // Two autocompletes with logos: the network first, then the token on it. Writes the
 // chosen asset id into the hidden input named by data-pick and fires its input event.
-const chainIcon = (c) => `<span class="coin">${LOGOS[c === 'btc' ? 'btc:BTC' : c === 'eth' ? 'eth:ETH' : 'BLRD'] || ''}</span>`;
+const chainIcon = (c) => `<span class="coin">${LOGOS[c === 'btc' ? 'btc:BTC' : c === 'eth' ? 'eth:ETH' : c === 'base' ? 'base' : 'BLRD'] || ''}</span>`;
 function buildPickers() {
   for (const root of document.querySelectorAll('.pickers')) {
     const target = $(root.dataset.pick);
@@ -212,7 +227,18 @@ async function computeSimple() {
   const have = side === 'buy' ? quote : qty; const haveAsset = side === 'buy' ? USDC : asset;
   const mine = myBalance(haveAsset);
   const avg = fills.length ? Number(quote) / Number(qty - left) * 1e8 : 0;
+  let yieldNote = '';
+  if (asset === VAULT.asset) {
+    const v = await loadVault(); if (run !== computeSeq) return;
+    if (v && v.sharePrice) {
+      const worth = Number(qty - left) / 1e6 * v.sharePrice; const paid = Number(quote) / 1e6;
+      const diff = side === 'buy' ? paid - worth : worth - paid;
+      const fmtUsd = (x) => '$' + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      yieldNote = `<br>Earning <b>${(100 * (v.netApy ?? v.apy)).toFixed(2)}%</b> now · ${diff >= 0 ? fmtUsd(diff) + (side === 'buy' ? ' to get in' : ' to get out') : fmtUsd(diff) + ' bonus'} · worth ${fmtUsd(worth)} <a href="${VAULT.url}" target="_blank" rel="noreferrer">Morpho</a>`;
+    }
+  }
   $('s-quote').innerHTML = (unitUsd ? `${side === 'buy' ? 'You get' : 'You sell'} <b>${fromAtoms(qty - left, asset)}</b> for ${fromAtoms(quote, USDC)}` : `${side === 'buy' ? 'You pay' : 'You get'} <b>${fromAtoms(quote, USDC)}</b>`) + (left > 0n ? ` for ${fromAtoms(qty - left, asset)}; only that much is on the book` : '') + ` · ${fmt(priceToHuman(BigInt(Math.round(avg)), asset, USDC), 6)} USDC/${a.symbol}` + (mine !== null && mine < have ? ` · you have ${fromAtoms(mine, haveAsset)}` : '');
+  $('s-quote').innerHTML += yieldNote;
   $('s-go').disabled = !me() || (mine !== null && mine < have);
 }
 let balances = null;

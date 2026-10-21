@@ -36,6 +36,9 @@ pub fn genesis_price(asset: &str) -> Option<i64> {
         "btc:BTC" => Some(80_000_000_000),
         "eth:ETH" => Some(300_000_000),
         "eth:USDT" => Some(100_000_000),
+        "base:USDC" => Some(100_000_000),
+        // A vault share was worth about $1.046 when listed; 10^8 atoms is 100 shares.
+        "base:gtUSDCp" => Some(104_600_000),
         _ => None,
     }
 }
@@ -714,8 +717,8 @@ pub async fn apply(c: &mut PgConnection, e: &ParsedEntry) -> Result<Vec<Value>> 
                 }
 
                 TxBody::SetReceiveAddress { chain: ch, address } => {
-                    if ch != "btc" && ch != "eth" {
-                        bail!("chain must be btc or eth");
+                    if ch != "btc" && ch != "eth" && ch != "base" {
+                        bail!("chain must be btc, eth or base");
                     }
                     if !address.is_empty() {
                         chain::receive_address(address, ch, 0)?;

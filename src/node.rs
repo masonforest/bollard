@@ -583,7 +583,7 @@ pub async fn run(cfg: RunArgs) -> Result<()> {
     let (event_tx, _) = broadcast::channel(1024);
     let (epoch_tx, _) = watch::channel(None);
     let node = Arc::new(Node {
-        chains: Chains::new(&cfg.bitcoin_rpc, &cfg.eth_rpc, &cfg.esplora),
+        chains: Chains::new(&cfg.bitcoin_rpc, &cfg.eth_rpc, &cfg.base_rpc, &cfg.esplora),
         http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?,
         head: Mutex::new(Head { seq, hash, time }),
         role: RwLock::new(Role::Starting),

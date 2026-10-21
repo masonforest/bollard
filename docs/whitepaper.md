@@ -188,7 +188,7 @@ The book lives in the log, and every node rebuilds it from there. Makers rest or
 ### Assets and markets
 
 - An asset is identified by its chain and its id on that chain. BLRD is the one internal asset.
-- Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote.
+- Supported assets are those the node software has an adapter for. Adding one is a software release, not a vote. The first release carries bitcoin; ether, USDC and Tether on Ethereum; and on Base, USDC and the shares of one Morpho vault, Gauntlet USDC Prime, so that dollars on Bollard can earn a rate. A vault share is an ordinary ERC-20 and the ledger treats it like any other asset: makers price it on the book, and the wallet shows the vault's rate and share price from Morpho's API so a buyer sees what they earn and what the maker charges to get in. No rate feed enters the protocol.
 - Every ledger market is quoted in dollars: USDC on Ethereum is the quote, and each other asset is a base against it. One market per asset keeps the book deep and the prices plain. A deposit market has the same asset on both sides: options on the base, paid for with the coin itself.
 
 ### Resting order (maker)

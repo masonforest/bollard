@@ -155,9 +155,11 @@ const store = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
 // ----- units -----
 const assets = {};
-const NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'US Dollar', 'eth:USDT': 'Tether', 'BLRD': 'Bollard' };
-const SYMBOL = { 'eth:USDC': '$', 'eth:USDT': '₮', 'btc:BTC': '₿', 'eth:ETH': 'Ξ', 'BLRD': 'ʙ' };
-const CHAIN = { btc: 'Bitcoin', eth: 'Ethereum', blrd: 'Bollard' };
+const NAMES = { 'btc:BTC': 'Bitcoin', 'eth:ETH': 'Ether', 'eth:USDC': 'US Dollar', 'eth:USDT': 'Tether', 'base:USDC': 'US Dollar on Base', 'base:gtUSDCp': 'USDC Prime', 'BLRD': 'Bollard' };
+const VAULT = { asset: 'base:gtUSDCp', address: '0x050cE30b927Da55177A4914EC73480238BAD56f0', chainId: 8453, url: 'https://app.morpho.org/base/vault/0x050cE30b927Da55177A4914EC73480238BAD56f0/gauntlet-usdc-prime' };
+async function loadVault() { if (state.vault && Date.now() - state.vaultAt < 60000) return state.vault; state.vaultAt = Date.now(); try { const r = await fetch('https://blue-api.morpho.org/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: `{ vaultV2ByAddress(address: "${VAULT.address}", chainId: ${VAULT.chainId}) { netApy apy sharePrice } }` }) }); state.vault = (await r.json()).data?.vaultV2ByAddress || null; } catch { state.vault = null; } render(); return state.vault; }
+const SYMBOL = { 'eth:USDC': '$', 'eth:USDT': '₮', 'base:USDC': '$', 'btc:BTC': '₿', 'eth:ETH': 'Ξ', 'BLRD': 'ʙ' };
+const CHAIN = { btc: 'Bitcoin', eth: 'Ethereum', base: 'Base', blrd: 'Bollard' };
 function toAtoms(human, id) {
   const a = assets[id]; const s = String(human).trim();
   if (!/^\d*\.?\d*$/.test(s) || s === '' || s === '.') throw new Error('Enter an amount.');
@@ -172,7 +174,7 @@ function human(atoms, id, digits) {
   if (digits !== undefined) t = Number(t).toFixed(digits); else t = t.replace(/\.?0+$/, '');
   return t;
 }
-const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT') ? `${SYMBOL[id]}${Number(human(atoms, id, 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${human(atoms, id)} ${assets[id]?.symbol || id}`;
+const money = (atoms, id) => (id === 'eth:USDC' || id === 'eth:USDT' || id === 'base:USDC') ? `${SYMBOL[id]}${Number(human(atoms, id, 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${human(atoms, id)} ${assets[id]?.symbol || id}`;
 const LOGOS = {
   'eth:USDC': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#2775CA"/><path fill="#fff" d="M20.5 18.6c0-2.3-1.4-3.1-4.2-3.5-2-.3-2.4-.8-2.4-1.7s.7-1.5 2-1.5c1.2 0 1.9.4 2.2 1.4.1.2.3.3.5.3h1.1c.3 0 .5-.2.4-.5-.3-1.5-1.4-2.6-3-2.9V8.8c0-.3-.2-.5-.5-.5h-1c-.3 0-.5.2-.5.5v1.4c-2 .3-3.3 1.6-3.3 3.3 0 2.2 1.3 3 4.1 3.4 1.9.3 2.5.7 2.5 1.8s-.9 1.7-2.2 1.7c-1.6 0-2.2-.7-2.4-1.6-.1-.2-.3-.4-.5-.4h-1.2c-.3 0-.5.2-.4.5.3 1.7 1.4 2.9 3.4 3.2v1.4c0 .3.2.5.5.5h1c.3 0 .5-.2.5-.5v-1.4c2-.3 3.4-1.7 3.4-3.5z"/><path fill="#fff" d="M12.6 25.6c-5.2-1.9-7.9-7.7-6-12.9 1-2.8 3.2-4.9 6-5.9.3-.1.4-.3.4-.6v-.9c0-.3-.1-.5-.4-.5h-.2C6 6.8 2.5 13.6 4.5 19.9c1.2 3.7 4.1 6.6 7.8 7.8.3.1.5 0 .6-.3v-1.2c0-.2-.1-.4-.3-.6zm7-19.9c-.3-.1-.5 0-.6.3v1.1c0 .2.1.4.3.6 5.2 1.9 7.9 7.7 6 12.9-1 2.8-3.2 4.9-6 5.9-.3.1-.4.3-.4.6v.9c0 .3.1.5.4.5h.2c6.4-2 9.9-8.8 7.9-15.1-1.2-3.8-4.1-6.7-7.8-7.7z"/></svg>`,
   'btc:BTC': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#F7931A"/><text x="16" y="22" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif" transform="rotate(-12 16 16)">₿</text></svg>`,
@@ -180,6 +182,8 @@ const LOGOS = {
   'eth:USDT': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#26A17B"/><path fill="#fff" d="M17.9 17.9v-.1c-.1 0-.7.1-1.9.1-1 0-1.7 0-1.9-.1v.1c-3.7-.2-6.5-.8-6.5-1.6s2.8-1.4 6.5-1.6v2.6c.3 0 1 .1 1.9.1 1.1 0 1.7-.1 1.9-.1v-2.6c3.7.2 6.5.8 6.5 1.6s-2.8 1.4-6.5 1.6zm0-3.5v-2.3h5.2V8.6H8.9v3.5h5.2v2.3c-4.2.2-7.4 1-7.4 2s3.2 1.8 7.4 2v7.5h3.8v-7.5c4.2-.2 7.4-1 7.4-2s-3.2-1.8-7.4-2z"/></svg>`,
   'BLRD': `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#1F5FBF"/><text x="16" y="22" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif">B</text></svg>`,
 };
+LOGOS['base:USDC'] = LOGOS['eth:USDC'];
+LOGOS['base:gtUSDCp'] = `<svg viewBox="0 0 32 32" class="logo"><circle cx="16" cy="16" r="16" fill="#2775CA"/><circle cx="16" cy="16" r="10" fill="none" stroke="#fff" stroke-width="2.2" stroke-dasharray="44 20" transform="rotate(-60 16 16)"/><text x="16" y="20.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="Arial, Helvetica, sans-serif">%</text></svg>`;
 const coinIcon = (id) => LOGOS[id] || '';
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '');
 
@@ -338,7 +342,7 @@ const forms = {
     if (!pays.length) throw new Error(`Only ${money(exits.reduce((n, o) => n + BigInt(o.qty_left), 0n), asset)} of ${a.symbol} is on offer right now; try that or less.`);
     d.pays = pays; d.short = left > 0n ? left : null;
     d.before = balanceOf(asset); d.watching = true; render(); watchDeposit();
-    if (a.chain === 'eth' && hasEthWallet()) {
+    if ((a.chain === 'eth' || a.chain === 'base') && hasEthWallet()) {
       for (const m of pays) { try { (d.sent ||= {})[m.taker_pay_to] = await payWithEthWallet(asset, m.taker_pay_to, m.taker_amount); render(); } catch (e) { state.error = e.message; render(); break; } }
 
     }
@@ -383,7 +387,8 @@ async function connectEthWallet(prompt = true) {
 async function payWithEthWallet(asset, to, atoms) {
   const a = assets[asset]; const eth = window.ethereum;
   const from = state.ethAccount || await connectEthWallet(true);
-  try { await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x1' }] }); } catch (e) { if (e.code !== 4001) throw new Error('Switch MetaMask to Ethereum mainnet.'); else throw e; }
+  const chainId = a.chain === 'base' ? '0x2105' : '0x1';
+  try { await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] }); } catch (e) { if (e.code !== 4001) throw new Error(`Switch MetaMask to ${a.chain === 'base' ? 'Base' : 'Ethereum mainnet'}.`); else throw e; }
   const raw = BigInt(atoms) * BigInt(a.atom_scale || 1);
   const pad = (h) => h.replace(/^0x/, '').padStart(64, '0');
   const tx = a.contract
@@ -584,7 +589,7 @@ const views = {
       </form>`;
     return `
       <div class="stack center" style="gap:10px">
-        <span class="curpill">${coinIcon(c)}${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}</span>
+        <span class="curpill">${coinIcon(c)}${esc(assets[c]?.symbol || c)} on ${esc(CHAIN[assets[c]?.chain] || '')}${c === VAULT.asset && state.vault ? ` · earning ${(100 * (state.vault.netApy ?? state.vault.apy)).toFixed(2)}%` : ''}</span>
         <h1>${money(balanceOf(c), c)}</h1>
       </div>
       ${body}
@@ -594,6 +599,7 @@ const views = {
     // Advanced mode is the full trade view: chart, book and taking. Simple mode is what you hold.
     if (advanced() || state.buying) return state.buying && !advanced() ? '<p class="center"><button class="link" data-action="buyDone">← Back to portfolio</button></p>' : '';
     const held = holdings();
+    if (held.some((h) => h.asset === VAULT.asset) && !state.vault) loadVault();
     const prices = state.prices || {};
     const value = (h) => { const p = prices[h.asset]; return p ? (h.amount * BigInt(p)) / 100000000n : null; };
     const total = held.reduce((n, h) => n + (value(h) || 0n), 0n);
@@ -605,7 +611,7 @@ const views = {
     const sell = state.sell;
     const list = `
       <div class="stack center"><h1>${money(total, 'eth:USDC')}</h1></div>
-      <ul class="assets">${held.map((h) => `<li><button type="button" class="rowbtn" data-action="sellPick" data-value="${h.asset}"><span class="withicon">${coinIcon(h.asset)}<span>${NAMES[h.asset] || h.asset}<span class="sub">${money(h.amount, h.asset)}</span></span></span><span class="right">${value(h) !== null ? money(value(h), 'eth:USDC') : '<span class="muted">no price yet</span>'}${h.asset === 'eth:USDC' ? '' : '<span class="chev">›</span>'}</span></button></li>`).join('')}</ul>
+      <ul class="assets">${held.map((h) => `<li><button type="button" class="rowbtn" data-action="sellPick" data-value="${h.asset}"><span class="withicon">${coinIcon(h.asset)}<span>${NAMES[h.asset] || h.asset}<span class="sub">${money(h.amount, h.asset)}${h.asset === VAULT.asset && state.vault ? ` · earning ${(100 * (state.vault.netApy ?? state.vault.apy)).toFixed(2)}%` : ''}</span></span></span><span class="right">${value(h) !== null ? money(value(h), 'eth:USDC') : '<span class="muted">no price yet</span>'}${h.asset === 'eth:USDC' ? '' : '<span class="chev">›</span>'}</span></button></li>`).join('')}</ul>
       ${buy}`;
     const pane2 = sell ? sellPane(sell) : '';
     return `
@@ -626,7 +632,7 @@ const views = {
             <p>Pay <b>${money(m.taker_amount, m.taker_asset)}</b> on ${chain} to</p>
             <div class="qr">${qrSvg(a.chain === 'btc' ? `bitcoin:${m.taker_pay_to}?amount=${human(m.taker_amount, m.taker_asset)}` : m.taker_pay_to)}</div>
             <p class="mono">${m.taker_pay_to}</p>
-            <div class="row center"><button data-action="copy" data-text="${m.taker_pay_to}" data-label="Copy address">Copy address</button>${a.chain === 'eth' && hasEthWallet() && m.status === 'open' ? `<button class="primary" data-action="payMetaMask" data-to="${m.taker_pay_to}" data-amount="${m.taker_amount}">Pay with MetaMask</button>` : ''}</div>
+            <div class="row center"><button data-action="copy" data-text="${m.taker_pay_to}" data-label="Copy address">Copy address</button>${(a.chain === 'eth' || a.chain === 'base') && hasEthWallet() && m.status === 'open' ? `<button class="primary" data-action="payMetaMask" data-to="${m.taker_pay_to}" data-amount="${m.taker_amount}">Pay with MetaMask</button>` : ''}</div>
             ${d.sent?.[m.taker_pay_to] ? `<p class="muted center">Sent ${short(d.sent[m.taker_pay_to], 14)} from your wallet.</p>` : ''}
             <p class="muted center">${m.status === 'closed' ? 'Paid; the balance is yours.' : m.status !== 'open' ? `This claim ${m.status}; the seller got their balance back.` : m.taker_txid ? `Payment ${short(m.taker_txid, 12)} seen; waiting for a block.` : 'A maker sells you this for the coin itself; pay them and it is yours once the payment is in a block. Watching the chain.'}</p>
           </div>`).join('')}
@@ -635,7 +641,7 @@ const views = {
         </div>`;
     }
     // Two panels that slide: pick the coin, then type the amount.
-    const rows = [['eth:USDC', 'USD Coin', 'on Ethereum · pay with MetaMask or any wallet'], ['btc:BTC', 'Bitcoin', 'on Bitcoin · one confirmation']];
+    const rows = [['eth:USDC', 'USD Coin', 'on Ethereum · pay with MetaMask or any wallet'], ['base:USDC', 'USD Coin', 'on Base · cheaper, same dollars'], ['btc:BTC', 'Bitcoin', 'on Bitcoin · one confirmation']];
     const chosen = rows.find((r) => r[0] === d.asset) || rows[0];
     const step2 = d.step === 'amount';
     return `
@@ -655,7 +661,7 @@ const views = {
             </div>
             <p class="muted center" id="dep-equiv">${d.unit === 'usd' ? '0 BTC' : '$0'}</p>` : `
             <div class="big-amount"><span class="grow"></span><span class="entry"><span class="prefix">$</span><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off" required data-input="depositAmount" style="width:1ch"></span><span class="grow"></span></div>
-            <p class="muted center">USDC on Ethereum</p>`}
+            <p class="muted center">USDC on ${CHAIN[assets[d.asset]?.chain] || ''}</p>`}
             <button class="primary" type="submit" ${state.busy ? 'disabled' : ''}>Deposit</button>
           </form>
         </div>
