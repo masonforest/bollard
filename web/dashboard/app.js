@@ -253,9 +253,12 @@ $('s-go').onclick = async () => {
       await send(api, null, TxType.Claim, { order_id: hex.dec(f.order.id), quantity: f.qty, receive_address: '' });
       got += f.qty; paid += quoteAmount(f.qty, f.order.price);
     }
-    $('s-result').textContent = side === 'buy' ? `Bought ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}.` : `Sold ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}.`;
+    const text = side === 'buy' ? `Bought ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}` : `Sold ${fromAtoms(got, asset)} for ${fromAtoms(paid, USDC)}`;
+    $('s-result').textContent = text + '.';
     $('s-amount').value = ''; plan = null; $('s-quote').textContent = 'Enter an amount.';
-    renderAccount(); 
+    renderAccount();
+    // Inside the wallet, the wallet shows the success and takes the user back to the portfolio.
+    if (window.self !== window.top) window.parent.postMessage({ bollard: 'traded', text }, location.origin);
   } catch (e) { $('s-error').textContent = e.message; $('s-go').disabled = false; }
 };
 async function loadSimple() { if (me()) balances = await j(`/balances/${me()}`).catch(() => null); renderTokenButtons(); computeSimple(); }

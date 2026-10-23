@@ -211,6 +211,8 @@ function showSuccess(text) {
   modal.innerHTML = `<div class="overlay" data-action="dismissSuccess"><div class="success"><svg viewBox="0 0 120 120" width="110" height="110"><circle class="ring" cx="60" cy="60" r="56"/><path class="tick" d="M34 62 L53 80 L88 42"/></svg><p>${esc(text)}</p><button class="primary" data-action="dismissSuccess">Done</button></div></div>`;
   modal.hidden = false;
 }
+// The embedded trade card reports a fill: flash the success and return to the portfolio.
+window.addEventListener('message', (e) => { if (e.origin !== location.origin || e.data?.bollard !== 'traded') return; state.success = e.data.text; state.buying = false; state.error = ''; refresh(); });
 modal.addEventListener('click', (e) => { if (e.target.closest('[data-action=dismissSuccess]')) { modal.hidden = true; modal.innerHTML = ''; state.success = null; shownSuccess = null; } });
 const nav = document.querySelector('nav');
 
